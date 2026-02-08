@@ -3,30 +3,64 @@ import requests
 from bs4 import BeautifulSoup
 import tldextract
 import time
-import re
+from urllib.parse import urljoin, urlparse
 
 app = FastAPI(title="Website Intelligence API")
 
-# -------------------------
-# Helper: Fetch website
-# -------------------------
+# --------------------------------
+# Request session (faster + safer)
+# --------------------------------
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+})
+
+# --------------------------------
+# Validate URL
+# --------------------------------
+def validate_url(url: str):
+    if not url.startswith("http"):
+        url = "https://" + url
+    return url
+
+# --------------------------------
+# Fetch Website
+# --------------------------------
 def fetch_site(url):
+
+    url = validate_url(url)
+
     try:
         start = time.time()
-        response = requests.get(url, timeout=10)
-        load_time = time.time() - start
-        return response, load_time
-    except:
-        return None, None
+        response = session.get(url, timeout=8)
+        load_time = round(time.time() - start, 3)
+
+        return response, load_time, url
+
+    except requests.exceptions.RequestException:
+        return None, None, None
 
 
-# -------------------------
+# --------------------------------
+# Health Endpoint
+# --------------------------------
+@app.get("/")
+def home():
+    return {"status": "Website Intelligence API running"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+# --------------------------------
 # Metadata Extractor
-# -------------------------
+# --------------------------------
 @app.get("/metadata")
 def metadata(url: str):
 
-    response, load_time = fetch_site(url)
+    response, load_time, url = fetch_site(url)
 
     if not response:
         raise HTTPException(400, "Cannot fetch website")
@@ -35,18 +69,17 @@ def metadata(url: str):
 
     def get_meta(name):
         tag = soup.find("meta", attrs={"name": name})
-        if tag:
-            return tag.get("content")
-        return None
+        return tag.get("content") if tag else None
 
-    def get_og(property_name):
-        tag = soup.find("meta", attrs={"property": property_name})
-        if tag:
-            return tag.get("content")
-        return None
+    def get_og(prop):
+        tag = soup.find("meta", attrs={"property": prop})
+        return tag.get("content") if tag else None
+
+    title = soup.title.string.strip() if soup.title else None
 
     return {
-        "title": soup.title.string if soup.title else None,
+        "url": url,
+        "title": title,
         "description": get_meta("description"),
         "keywords": get_meta("keywords"),
         "og_title": get_og("og:title"),
@@ -57,13 +90,13 @@ def metadata(url: str):
     }
 
 
-# -------------------------
+# --------------------------------
 # Technology Detector
-# -------------------------
+# --------------------------------
 @app.get("/technology")
 def detect_tech(url: str):
 
-    response, _ = fetch_site(url)
+    response, _, url = fetch_site(url)
 
     if not response:
         raise HTTPException(400, "Cannot fetch website")
@@ -72,77 +105,80 @@ def detect_tech(url: str):
 
     tech = []
 
-    if "wp-content" in html:
-        tech.append("WordPress")
+    checks = {
+        "WordPress": "wp-content",
+        "Shopify": "shopify",
+        "React": "react",
+        "Next.js": "next.js",
+        "jQuery": "jquery",
+        "Bootstrap": "bootstrap"
+    }
 
-    if "shopify" in html:
-        tech.append("Shopify")
+    for name, keyword in checks.items():
+        if keyword in html:
+            tech.append(name)
 
-    if "react" in html:
-        tech.append("React")
-
-    if "next.js" in html:
-        tech.append("Next.js")
-
-    if "jquery" in html:
-        tech.append("jQuery")
-
-    if "bootstrap" in html:
-        tech.append("Bootstrap")
-
-    return {"detected": tech}
+    return {
+        "url": url,
+        "detected": tech
+    }
 
 
-# -------------------------
+# --------------------------------
 # Link Extractor
-# -------------------------
+# --------------------------------
 @app.get("/links")
 def extract_links(url: str):
 
-    response, _ = fetch_site(url)
+    response, _, url = fetch_site(url)
 
     if not response:
         raise HTTPException(400, "Cannot fetch website")
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    internal = []
-    external = []
-    emails = []
-    socials = []
+    internal = set()
+    external = set()
+    emails = set()
+    socials = set()
 
-    domain = tldextract.extract(url).registered_domain
+    parsed = urlparse(url)
+    base_domain = parsed.netloc
 
     for a in soup.find_all("a", href=True):
         link = a["href"]
 
-        if "mailto:" in link:
-            emails.append(link.replace("mailto:", ""))
+        # Convert relative links
+        link = urljoin(url, link)
 
-        elif domain in link:
-            internal.append(link)
+        if link.startswith("mailto:"):
+            emails.add(link.replace("mailto:", ""))
+
+        elif base_domain in link:
+            internal.add(link)
 
         elif link.startswith("http"):
-            external.append(link)
+            external.add(link)
 
-        if any(s in link for s in ["facebook", "twitter", "instagram", "linkedin"]):
-            socials.append(link)
+        if any(s in link for s in ["facebook.com", "twitter.com", "instagram.com", "linkedin.com"]):
+            socials.add(link)
 
     return {
-        "internal_links": list(set(internal)),
-        "external_links": list(set(external)),
-        "emails": list(set(emails)),
-        "social_links": list(set(socials))
+        "url": url,
+        "internal_links": list(internal),
+        "external_links": list(external),
+        "emails": list(emails),
+        "social_links": list(socials)
     }
 
 
-# -------------------------
-# Security Check
-# -------------------------
+# --------------------------------
+# Security Headers Check
+# --------------------------------
 @app.get("/security")
 def security_check(url: str):
 
-    response, _ = fetch_site(url)
+    response, _, url = fetch_site(url)
 
     if not response:
         raise HTTPException(400, "Cannot fetch website")
@@ -150,8 +186,10 @@ def security_check(url: str):
     headers = response.headers
 
     return {
+        "url": url,
         "https": url.startswith("https"),
         "hsts": "Strict-Transport-Security" in headers,
         "x_frame": "X-Frame-Options" in headers,
-        "x_content": "X-Content-Type-Options" in headers
+        "x_content": "X-Content-Type-Options" in headers,
+        "x_xss": "X-XSS-Protection" in headers
     }
