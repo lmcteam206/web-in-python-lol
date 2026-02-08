@@ -50,8 +50,7 @@ def fetch_site(url):
 # Helper: Verify API Key
 # ----------------------------
 def verify_api_key(x_api_key: str = Header(...)):
-    if x_api_key not in API_KEYS:
-        raise HTTPException(status_code=401, detail="Invalid API Key")
+    pass  # do nothing, RapidAPI already handles authentication
 
 # ----------------------------
 # Helper: Rate Limiter
@@ -72,7 +71,7 @@ def rate_limiter(request: Request):
 def home():
     return {"status": "Website Intelligence API running"}
 
-@app.get("/health", summary="Health Check", description="Return API health status")
+@app.get("/health", summary="Health Check", description="Check if API is running")
 def health():
     return {"status": "ok"}
 
