@@ -5,38 +5,62 @@ import threading
 import webbrowser
 
 class Application:
+    """
+    Handles data persistence for the System. 
+    Manages saving and loading state from a local JSON file.
+    
+    Args:
+        filename (str): The name of the file used for storage. Defaults to 'save.json'.
+    """
     def __init__(self, filename="save.json"):
         self.filename = filename
 
     def save(self, data):
-        """Saves any Python dictionary to the JSON file."""
+        """
+        Serializes a Python dictionary to the JSON storage file.
+        
+        Args:
+            data (dict): The dictionary containing system state/stats to save.
+        """
         with open(self.filename, "w") as f:
             json.dump(data, f, indent=4)
 
     def load(self):
+        """
+        Loads the system data from the JSON file. 
+        If the file does not exist, returns a default 'New Hunter' starting state.
+        
+        Returns:
+            dict: The loaded data or the default initial dictionary.
+        """
         if not os.path.exists(self.filename):
-            # EVERYTHING you use in your UI must be defined here!
             return {
                 "level": 1, 
                 "xp": 0, 
                 "rank": "E",
-                "str": 10,  # Added this
-                "agi": 10,  # Added this
-                "int": 10   # Added this
+                "str": 10,
+                "agi": 10,
+                "int": 10,
+                "videos": []
             }
         with open(self.filename, "r") as f:
             return json.load(f)
             
 class ShadowEngine(BaseHTTPRequestHandler):
+    """
+    The Custom HTTP Request Handler. 
+    Processes incoming GET requests and injects rendered components into a 
+    pre-styled HTML shell with a Flexbox layout.
+    """
     routes = {} 
 
     def do_GET(self):
+        """Handles incoming HTTP GET requests, performs routing, and returns HTML."""
         self.send_response(200)
         self.send_header("Content-type", "text/html")
         self.end_headers()
         
-        # Check if requested URL exists
-        # Basic parsing to handle query parameters (like ?id=1)
+        # Path parsing to ignore query strings
         path = self.path.split("?")[0]
         
         if path in ShadowEngine.routes:
@@ -44,8 +68,7 @@ class ShadowEngine(BaseHTTPRequestHandler):
         else:
             page_content = "<h1 style='text-align:center; margin-top:50px;'>404: Gate Not Found</h1>"
 
-        # THE MAGIC HAPPENS HERE:
-        # We set min-height: 100vh and display: flex on the body.
+        # Global System CSS Shell
         full_html = f"""
         <!DOCTYPE html>
         <html>
@@ -61,7 +84,7 @@ class ShadowEngine(BaseHTTPRequestHandler):
                     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                     display: flex;
                     flex-direction: column;
-                    min-height: 100vh; /* Forces body to be at least screen height */
+                    min-height: 100vh;
                 }}
             </style>
         </head>
@@ -73,22 +96,43 @@ class ShadowEngine(BaseHTTPRequestHandler):
         self.wfile.write(bytes(full_html, "utf-8"))
 
 class WebApp:
+    """
+    The main interface for creating web applications. 
+    Provides decorators for routing and methods for building pages.
+    """
     def __init__(self):
         self.app_logic = Application() 
         self.data = self.app_logic.load()
 
     def page(self, path):
+        """
+        A decorator to register a function as a view for a specific URL path.
+        
+        Args:
+            path (str): The URL endpoint (e.g., '/', '/profile').
+        """
         def wrapper(func):
             ShadowEngine.routes[path] = func
             return func
         return wrapper
     
     def build_page(self, components):
-        # We wrap the components. If a Footer has margin-top: auto, 
-        # it will now stick to the bottom because of the flex body above.
+        """
+        Renders a list of components into a single string of HTML.
+        
+        Args:
+            components (list[Component]): The UI elements to render on the page.
+            
+        Returns:
+            str: The final concatenated HTML.
+        """
         return "".join([c.render() for c in components])
     
     def start(self):
+        """
+        Initializes the HTTPServer, opens the default web browser, 
+        and begins listening for requests at http://localhost:8080.
+        """
         print("System Initialized. Accessing Gate at http://localhost:8080")
         server = HTTPServer(("localhost", 8080), ShadowEngine)
         threading.Timer(1, lambda: webbrowser.open("http://localhost:8080")).start()
