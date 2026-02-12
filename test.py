@@ -19,7 +19,6 @@ def dashboard(params):
     members = web.data.get("members", [])
     
     # --- 1. STATS SECTION ---
-    # Calculating metrics for the dashboard header
     total_count = len(members)
     last_member = members[-1]["name"] if members else "None"
     
@@ -45,22 +44,49 @@ def dashboard(params):
             comp.Card([
                 comp.Image(url=m["img"], size="100px", circular=True),
                 comp.Text(m["name"], bold=True, align="center"),
+                # Link to the Dynamic Profile
+                comp.Text(f'<a href="/member/{m["name"]}" style="color:#00ffcc; font-size:12px; text-decoration:none;">VIEW PROFILE</a>', align="center"),
+                # Remove link
                 comp.Text(f'<a href="/?delete={m["name"]}" style="color:#ff4b4b; font-size:11px; text-decoration:none;">REMOVE</a>', align="center")
             ])
         )
 
-    # --- 3. FINAL PAGE ASSEMBLY ---
     return web.build_page([
         comp.Navbar(brand="FAMILY_OS", links={"Dashboard": "/", "Add New": "/add"}),
         comp.Container([
             comp.Text("System Dashboard", size="28px", bold=True),
-            stats_row,  # The high-level overview
-            
+            stats_row,
             comp.Text("Family Directory", size="20px", bold=True),
             comp.Row(items=member_cards, gap="20px", justify="flex-start")
         ])
     ])
- 
+
+# --- DYNAMIC ROUTE ---
+# The (.+) catches the name from the URL and passes it as 'name'
+@web.page("/member/(.+)")
+def member_profile(params, name, is_post=False):
+    # Find the member in our data
+    member_data = next((m for m in web.data["members"] if m["name"] == name), None)
+    
+    if not member_data:
+        return web.build_page([comp.Text("Member Not Found", size="40px", color="red")])
+
+    return web.build_page([
+        comp.Navbar(brand="FAMILY_OS", links={"Dashboard": "/", "Back": "/"}),
+        comp.Container([
+            comp.Card([
+                comp.Row([
+                    comp.Image(url=member_data["img"], size="200px", border=True),
+                    comp.Container([
+                        comp.Text(f"Profile: {name}", size="32px", bold=True, color="#00ffcc"),
+                        comp.Text("Role: Family Member", color="#888"),
+                        comp.Text("Status: Active", color="#4bb543")
+                    ])
+                ])
+            ])
+        ])
+    ])
+
 @web.page("/add")
 def add_page(params, is_post=False):
     if is_post:
