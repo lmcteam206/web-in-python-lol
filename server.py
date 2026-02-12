@@ -27,15 +27,34 @@ async def serve_pro(request: RenderRequest):
         raise HTTPException(status_code=403, detail="Invalid License Key")
 
     # 2. Pro Component Logic (Hidden from GitHub)
+    # Part of your FastAPI server.py
     if request.comp_type == "ProNav":
-        brand = request.props.get("brand", "OS")
-        # Return high-end HTML with CSS animations
+        brand = request.props.get("brand", "SHADOW_OS")
+        
+        # This HTML is never seen by the user in their source code
         html = f"""
-        <nav style="display: flex; justify-content: space-between; padding: 20px 50px; 
-                    background: rgba(0,0,0,0.8); backdrop-filter: blur(10px); 
-                    border-bottom: 2px solid #00ffcc; box-shadow: 0 0 20px #00ffcc44;">
-            <div style="font-weight: 900; color: #00ffcc; letter-spacing: 2px;">{brand.upper()} PRO</div>
-            <div style="color: white; font-size: 12px;">LICENSE VERIFIED: {request.license_key}</div>
+        <nav style="
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            padding: 0 50px; 
+            height: 80px; 
+            background: rgba(10, 10, 10, 0.8); 
+            backdrop-filter: blur(15px); 
+            border-bottom: 2px solid #00ffcc;
+            box-shadow: 0 4px 20px rgba(0, 255, 204, 0.2);
+            font-family: 'Segoe UI', sans-serif;
+        ">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div style="width: 12px; height: 12px; background: #00ffcc; border-radius: 50%; box-shadow: 0 0 10px #00ffcc;"></div>
+                <span style="font-size: 22px; font-weight: 900; color: #fff; letter-spacing: 3px;">{brand}</span>
+            </div>
+            
+            <div style="display: flex; gap: 30px;">
+                <span style="color: #00ffcc; font-size: 11px; font-weight: bold; border: 1px solid #00ffcc; padding: 5px 10px; border-radius: 4px;">
+                    PRO SESSION: {request.license_key[:7]}...
+                </span>
+            </div>
         </nav>
         """
         return {"html": html}
