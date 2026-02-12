@@ -1,67 +1,84 @@
-from youtubesearchpython import VideosSearch
 from Engine import core, comp
 import os
 
-# --- APP SETUP ---
 web = core.WebApp()
 
-# Ensure the data structure is solid on startup
-if "videos" not in web.data:
-    web.data["videos"] = []
+# Ensure base data keys exist
+if "members" not in web.data:
+    web.data["members"] = []
+    web.app_logic.save(web.data)
 
 @web.page("/")
-def video_home():
-    # Defensive check for the 'videos' key
-    video_list = web.data.get("videos", [])
-    video_cards = [comp.YouTubeVideo(v['url'], v['title']) for v in video_list]
-
-    return web.build_page([
-        comp.Header(title="SHADOWTUBE", links={"Home": "/", "Sync System": "/scrape"}),
-        
-        comp.Container([
-            comp.Row([
-                comp.Text("Monarch's Live Feed", size="32px", bold=True, color="#00ffcc"),
-                comp.ActionButton("SCRY 10 VIDEOS", "/scrape")
-            ]),
-            # Display videos or a 'System Empty' message
-            comp.Row_full(video_cards) if video_cards else comp.Text("Archive Empty. Initiate Sync.", color="gray")
-        ]),
-        
-        comp.FlexibleFooter(
-            sections={
-                "System": {"Wiki": "/wiki", "Maps": "/maps", "Rankings": "/leaderboard"},
-                "Support": {"Manual": "/docs", "Help": "/support"}
-            },
-            company="ShadowTube.py"
-        )
-    ])
-
-@web.page("/scrape")
-def scrape_action():
-    try:
-        # SCRAPER LOGIC: Search for real content
-        search = VideosSearch('Solo Leveling Official', limit=10)
-        results = search.result()['result']
-        
-        new_batch = [{"title": r['title'], "url": r['link']} for r in results]
-        
-        # Update and save
-        web.data["videos"].extend(new_batch)
+def dashboard(params):
+    # --- LOGIC: DELETE ---
+    if "delete" in params:
+        target = params["delete"]
+        web.data["members"] = [m for m in web.data["members"] if m['name'] != target]
         web.app_logic.save(web.data)
-        
-        status_msg = f"Successfully synchronized {len(new_batch)} videos."
-    except Exception as e:
-        status_msg = f"Sync Failed: {str(e)}"
+
+    members = web.data.get("members", [])
+    
+    # --- 1. STATS SECTION ---
+    # Calculating metrics for the dashboard header
+    total_count = len(members)
+    last_member = members[-1]["name"] if members else "None"
+    
+    stats_row = comp.Row(items=[
+        comp.Card([
+            comp.Text("Total Members", size="12px", color="#888"),
+            comp.Text(str(total_count), size="32px", bold=True, color="#00ffcc")
+        ]),
+        comp.Card([
+            comp.Text("Latest Addition", size="12px", color="#888"),
+            comp.Text(last_member, size="24px", bold=True)
+        ]),
+        comp.Card([
+            comp.Text("System Status", size="12px", color="#888"),
+            comp.Text("ONLINE", size="24px", bold=True, color="#4bb543")
+        ])
+    ], justify="space-evenly")
+
+    # --- 2. MEMBER GRID ---
+    member_cards = []
+    for m in members:
+        member_cards.append(
+            comp.Card([
+                comp.Image(url=m["img"], size="100px", circular=True),
+                comp.Text(m["name"], bold=True, align="center"),
+                comp.Text(f'<a href="/?delete={m["name"]}" style="color:#ff4b4b; font-size:11px; text-decoration:none;">REMOVE</a>', align="center")
+            ])
+        )
+
+    # --- 3. FINAL PAGE ASSEMBLY ---
+    return web.build_page([
+        comp.Navbar(brand="FAMILY_OS", links={"Dashboard": "/", "Add New": "/add"}),
+        comp.Container([
+            comp.Text("System Dashboard", size="28px", bold=True),
+            stats_row,  # The high-level overview
+            
+            comp.Text("Family Directory", size="20px", bold=True),
+            comp.Row(items=member_cards, gap="20px", justify="flex-start")
+        ])
+    ])
+ 
+@web.page("/add")
+def add_page(params, is_post=False):
+    if is_post:
+        web.data["members"].append(params)
+        web.app_logic.save(web.data)
 
     return web.build_page([
-        comp.Header(title="SHADOWTUBE"),
+        comp.Navbar(brand="FAMILY_OS", links={"Dashboard": "/", "Add New": "/add"}),
         comp.Container([
-            comp.Alert(status_msg, type="success" if "Successfully" in status_msg else "error"),
-            comp.ActionButton("Back to Feed", "/")
-        ]),
-        comp.Footer()
+            comp.Card([
+                comp.Text("Register New Member", size="22px", bold=True),
+                comp.Form(action_url="/add", submit_text="Authorize Member", items=[
+                    comp.TextInput(label="Full Name", name="name", placeholder="Enter name..."),
+                    comp.TextInput(label="Image Path", name="img", placeholder="e.g. dad.jpg")
+                ])
+            ])
+        ])
     ])
 
 if __name__ == "__main__":
-    # For local testing. Change to host="0.0.0.0" for cloud deployment.
     web.start()
