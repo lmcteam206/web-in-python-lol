@@ -5,7 +5,7 @@ class Component:
     def render(self):
         return ""
 
-# --- FREE COMPONENTS (Standard Logic) ---
+# --- FREE COMPONENTS ---
 
 class Text(Component):
     def __init__(self, content, size="16px", color="white", bold=False, align="left"):
@@ -96,22 +96,6 @@ class TextInput(Component):
         </div>
         """
 
-class FileUpload(Component):
-    def __init__(self, label, name, accept="image/*"):
-        self.label = label
-        self.name = name
-        self.accept = accept
-
-    def render(self):
-        return f"""
-        <div style="margin: 10px; width: 100%; max-width: 320px; font-family: system-ui, sans-serif;">
-            <label style="display: block; font-size: 13px; margin-bottom: 8px; color: #bbb;">{self.label}</label>
-            <input type="file" name="{self.name}" accept="{self.accept}" 
-                   style="width: 100%; padding: 10px; border-radius: 6px; border: 2px dashed #444; 
-                   background: #222; color: #ccc; cursor: pointer; box-sizing: border-box;">
-        </div>
-        """
-
 class Form(Component):
     def __init__(self, action_url, items, submit_text="Submit", has_files=False):
         self.action_url = action_url
@@ -136,7 +120,8 @@ class Form(Component):
 
 class RemoteComponent:
     """Static handler for communicating with your Termux Tablet."""
-    CORE_URL = "http://YOUR_TABLET_IP:5000/request_pro_render"
+    # Replace with your Cloudflare/Ngrok URL
+    CORE_URL = "http://192.168.1.255:5000/request_pro_render"
 
     @staticmethod
     def fetch(key, c_type, props=None):
@@ -146,26 +131,51 @@ class RemoteComponent:
             response = requests.post(RemoteComponent.CORE_URL, json=payload, timeout=2)
             if response.status_code == 200:
                 return response.json().get("html")
-            return f""
-        except Exception as e:
-            return f""
+            return None
+        except:
+            return None
 
 class ProNav(Component):
-    """
-    A Premium Navigation Bar.
-    Requires an active license key to fetch high-end styles from the Remote Core.
-    """
-    def __init__(self, license_key, brand="FAMILY_OS"):
+    def __init__(self, license_key, brand="FAMILY_OS", links=None):
         self.key = license_key
         self.brand = brand
+        self.links = links or {"DASHBOARD": "/", "SETTINGS": "/settings"}
 
     def render(self):
-        # We use the fetcher to get the 'Secret' HTML from your tablet
-        remote_html = RemoteComponent.fetch(
-            key=self.key, 
-            c_type="ProNav", 
-            props={"brand": self.brand}
-        )
+        remote_html = RemoteComponent.fetch(self.key, "ProNav", {"brand": self.brand})
+        
+        # SUCCESS: Return Pro HTML from Tablet
+        if remote_html:
+            return remote_html
 
-        # SUCCESS: Return the beautiful ProNav
-        if remote_html and "
+        # FALLBACK: Return Offline/Free HTML
+        link_items = "".join([
+            f'<a href="{url}" style="color: #888; text-decoration: none; font-size: 13px; margin-left: 20px;">{name}</a>' 
+            for name, url in self.links.items()
+        ])
+        return f"""
+        <nav style="display: flex; justify-content: space-between; align-items: center; padding: 0 40px; 
+                    height: 70px; background: #0a0a0a; border-bottom: 1px solid #222;">
+            <div style="color: #fff; font-weight: 700;">{self.brand.upper()}</div>
+            <div style="display: flex; align-items: center;">
+                {link_items}
+                <div style="margin-left: 20px; font-size: 10px; color: #444; border: 1px solid #333; padding: 2px 8px;">OFFLINE</div>
+            </div>
+        </nav>
+        """
+
+class ProAnalytics(Component):
+    def __init__(self, license_key, value):
+        self.key = license_key
+        self.value = value
+
+    def render(self):
+        return RemoteComponent.fetch(self.key, "PremiumAnalytics", {"value": self.value}) or f"<div style='color:red;'>Pro License Required</div>"
+
+class ProCard(Component):
+    def __init__(self, license_key, title):
+        self.key = license_key
+        self.title = title
+
+    def render(self):
+        return RemoteComponent.fetch(self.key, "GlassCard", {"title": self.title}) or f"<div>{self.title} (Pro)</div>"
