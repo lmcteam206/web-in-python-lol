@@ -5,36 +5,36 @@ class Component:
     def render(self):
         return ""
 
-# --- FREE COMPONENTS ---
+# --- FREE COMPONENTS (Enhanced Aesthetics) ---
 
 class Text(Component):
-    def __init__(self, content, size="16px", color="white", bold=False, align="left"):
+    def __init__(self, content, size="16px", color="#ffffff", bold=False, align="left"):
         self.content = content
         self.size = size
         self.color = color
-        self.weight = "bold" if bold else "normal"
+        self.weight = "700" if bold else "400"
         self.align = align
 
     def render(self):
         return f"""
         <div style="color: {self.color}; font-size: {self.size}; font-weight: {self.weight}; 
-                    text-align: {self.align}; font-family: system-ui, sans-serif; 
-                    margin: 10px 0; line-height: 1.5; box-sizing: border-box;">
+                    text-align: {self.align}; font-family: 'Inter', -apple-system, sans-serif; 
+                    margin: 12px 0; line-height: 1.6; letter-spacing: -0.01em;">
             {self.content}
         </div>
         """
 
 class Container(Component):
-    def __init__(self, items, max_width="1200px"):
+    def __init__(self, items, max_width="1100px"):
         self.items = items
         self.max_width = max_width
 
     def render(self):
         content = "".join([i.render() for i in self.items])
-        return f'<div style="max-width: {self.max_width}; margin: 0 auto; padding: 0 20px; box-sizing: border-box;">{content}</div>'
+        return f'<div style="max-width: {self.max_width}; margin: 0 auto; padding: 40px 20px;">{content}</div>'
 
 class Row(Component):
-    def __init__(self, items, gap="15px", justify="center"):
+    def __init__(self, items, gap="20px", justify="center"):
         self.items = items
         self.gap = gap
         self.justify = justify
@@ -43,41 +43,44 @@ class Row(Component):
         content = "".join([i.render() for i in self.items])
         return f"""
         <div style="display: flex; flex-wrap: wrap; justify-content: {self.justify}; 
-                    gap: {self.gap}; width: 100%; box-sizing: border-box;">
+                    gap: {self.gap}; width: 100%; align-items: stretch;">
             {content}
         </div>
         """
 
 class Card(Component):
-    def __init__(self, items, bg="#222", shadow=True):
+    def __init__(self, items, bg="#161616", shadow=True):
         self.items = items
         self.bg = bg
-        self.shadow = "0 10px 25px rgba(0,0,0,0.3)" if shadow else "none"
+        self.shadow = "0 20px 40px rgba(0,0,0,0.4)" if shadow else "none"
 
     def render(self):
         content = "".join([i.render() for i in self.items])
         return f"""
-        <div style="background: {self.bg}; padding: 24px; border-radius: 16px; 
-                    box-shadow: {self.shadow}; margin: 15px; box-sizing: border-box; 
-                    border: 1px solid #333;">
+        <div style="background: {self.bg}; padding: 30px; border-radius: 20px; 
+                    box-shadow: {self.shadow}; border: 1px solid #2a2a2a;
+                    transition: transform 0.3s ease, border-color 0.3s ease;
+                    flex: 1; min-width: 280px; max-width: 100%;">
             {content}
         </div>
         """
 
 class Image(Component):
-    def __init__(self, url, size="100%", circular=False, border=False):
+    def __init__(self, url, size="120px", circular=False, border=True):
         self.url = url
         self.size = size
-        self.radius = "50%" if circular else "12px"
-        self.border = "2px solid #444" if border else "none"
+        self.radius = "50%" if circular else "16px"
+        self.border = "3px solid #333" if border else "none"
 
     def render(self):
         return f"""
-        <img src="{self.url}" style="width: {self.size}; aspect-ratio: 1/1; object-fit: cover; 
-               border-radius: {self.radius}; border: {self.border}; display: block; margin: 0 auto;">
+        <div style="width: {self.size}; height: {self.size}; margin: 0 auto 15px auto;">
+            <img src="{self.url}" style="width: 100%; height: 100%; object-fit: cover; 
+                   border-radius: {self.radius}; border: {self.border}; display: block;">
+        </div>
         """
 
-# --- FORM COMPONENTS ---
+# --- FORM COMPONENTS (Modern Dark Mode UI) ---
 
 class TextInput(Component):
     def __init__(self, label, name, placeholder="", type="text"):
@@ -88,16 +91,17 @@ class TextInput(Component):
 
     def render(self):
         return f"""
-        <div style="margin: 10px; width: 100%; max-width: 320px; font-family: system-ui, sans-serif;">
-            <label style="display: block; font-size: 13px; margin-bottom: 8px; color: #bbb;">{self.label}</label>
+        <div style="margin-bottom: 20px; width: 100%; font-family: sans-serif;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 8px; 
+                          color: #666; text-transform: uppercase; letter-spacing: 1px;">{self.label}</label>
             <input type="{self.type}" name="{self.name}" placeholder="{self.placeholder}" 
-                   style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #444; 
-                   background: #1a1a1a; color: white; box-sizing: border-box; outline: none;">
+                   style="width: 100%; padding: 14px; border-radius: 10px; border: 1px solid #333; 
+                   background: #0f0f0f; color: white; font-size: 15px; outline: none; transition: border 0.3s;">
         </div>
         """
 
 class Form(Component):
-    def __init__(self, action_url, items, submit_text="Submit", has_files=False):
+    def __init__(self, action_url, items, submit_text="Continue", has_files=False):
         self.action_url = action_url
         self.items = items
         self.submit_text = submit_text
@@ -107,10 +111,11 @@ class Form(Component):
         content = "".join([i.render() for i in self.items])
         return f"""
         <form action="{self.action_url}" method="POST" {self.enctype} 
-              style="display: flex; flex-direction: column; align-items: center; width: 100%;">
+              style="display: flex; flex-direction: column; width: 100%; max-width: 400px; margin: 0 auto;">
             {content}
-            <button type="submit" style="margin-top: 25px; padding: 12px 40px; background: #3b82f6; 
-                    color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
+            <button type="submit" style="margin-top: 10px; padding: 16px; background: #fff; 
+                    color: #000; border: none; border-radius: 12px; cursor: pointer; 
+                    font-weight: 700; font-size: 15px; transition: opacity 0.2s;">
                 {self.submit_text}
             </button>
         </form>
@@ -119,9 +124,7 @@ class Form(Component):
 # --- REMOTE CORE (PRO) LOGIC ---
 
 class RemoteComponent:
-    """Static handler for communicating with your Termux Tablet."""
-    # Replace with your Cloudflare/Ngrok URL
-    CORE_URL = "http://192.168.1.255:5000/request_pro_render"
+    CORE_URL = "http://192.168.1.2:5000/request_pro_render"
 
     @staticmethod
     def fetch(key, c_type, props=None):
@@ -143,23 +146,20 @@ class ProNav(Component):
 
     def render(self):
         remote_html = RemoteComponent.fetch(self.key, "ProNav", {"brand": self.brand})
-        
-        # SUCCESS: Return Pro HTML from Tablet
-        if remote_html:
-            return remote_html
+        if remote_html: return remote_html
 
-        # FALLBACK: Return Offline/Free HTML
         link_items = "".join([
-            f'<a href="{url}" style="color: #888; text-decoration: none; font-size: 13px; margin-left: 20px;">{name}</a>' 
+            f'<a href="{url}" style="color: #666; text-decoration: none; font-size: 13px; margin-left: 25px; font-weight: 500;">{name}</a>' 
             for name, url in self.links.items()
         ])
         return f"""
-        <nav style="display: flex; justify-content: space-between; align-items: center; padding: 0 40px; 
-                    height: 70px; background: #0a0a0a; border-bottom: 1px solid #222;">
-            <div style="color: #fff; font-weight: 700;">{self.brand.upper()}</div>
+        <nav style="display: flex; justify-content: space-between; align-items: center; padding: 0 60px; 
+                    height: 85px; background: #000; border-bottom: 1px solid #1a1a1a; font-family: sans-serif;">
+            <div style="color: #fff; font-weight: 800; font-size: 20px; letter-spacing: -1px;">{self.brand.upper()}</div>
             <div style="display: flex; align-items: center;">
                 {link_items}
-                <div style="margin-left: 20px; font-size: 10px; color: #444; border: 1px solid #333; padding: 2px 8px;">OFFLINE</div>
+                <div style="margin-left: 25px; font-size: 9px; color: #444; border: 1px solid #222; 
+                            padding: 4px 10px; border-radius: 6px; font-weight: bold;">OFFLINE_CORE</div>
             </div>
         </nav>
         """
@@ -170,7 +170,8 @@ class ProAnalytics(Component):
         self.value = value
 
     def render(self):
-        return RemoteComponent.fetch(self.key, "PremiumAnalytics", {"value": self.value}) or f"<div style='color:red;'>Pro License Required</div>"
+        return RemoteComponent.fetch(self.key, "PremiumAnalytics", {"value": self.value}) or \
+               f"<div style='color:#555; padding: 20px; border: 1px dashed #333; border-radius: 15px; text-align: center;'>Pro Analytics Locked</div>"
 
 class ProCard(Component):
     def __init__(self, license_key, title):
@@ -178,4 +179,5 @@ class ProCard(Component):
         self.title = title
 
     def render(self):
-        return RemoteComponent.fetch(self.key, "GlassCard", {"title": self.title}) or f"<div>{self.title} (Pro)</div>"
+        return RemoteComponent.fetch(self.key, "GlassCard", {"title": self.title}) or \
+               f"<div style='color:#444; font-size: 12px;'>{self.title} (Requires Pro)</div>"
