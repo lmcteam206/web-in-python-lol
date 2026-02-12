@@ -1,0 +1,25 @@
+# --- Python Bytecode ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- Local Data & Databases ---
+# We ignore the save file so every user starts fresh
+save.json
+
+# --- Uploads & Static Media ---
+# Ignore images uploaded during testing
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+
+# --- Environment & OS ---
+.env
+.venv
+venv/
+env/
+.DS_Store
+Thumbs.db

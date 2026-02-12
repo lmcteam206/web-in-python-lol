@@ -40,13 +40,13 @@ def dashboard(params):
     # --- 2. MEMBER GRID ---
     member_cards = []
     for m in members:
+        # Check if img exists, else use a placeholder
+        img_src = m.get("img", "placeholder.png")
         member_cards.append(
             comp.Card([
-                comp.Image(url=m["img"], size="100px", circular=True),
+                comp.Image(url=img_src, size="100px", circular=True),
                 comp.Text(m["name"], bold=True, align="center"),
-                # Link to the Dynamic Profile
                 comp.Text(f'<a href="/member/{m["name"]}" style="color:#00ffcc; font-size:12px; text-decoration:none;">VIEW PROFILE</a>', align="center"),
-                # Remove link
                 comp.Text(f'<a href="/?delete={m["name"]}" style="color:#ff4b4b; font-size:11px; text-decoration:none;">REMOVE</a>', align="center")
             ])
         )
@@ -61,11 +61,8 @@ def dashboard(params):
         ])
     ])
 
-# --- DYNAMIC ROUTE ---
-# The (.+) catches the name from the URL and passes it as 'name'
 @web.page("/member/(.+)")
 def member_profile(params, name, is_post=False):
-    # Find the member in our data
     member_data = next((m for m in web.data["members"] if m["name"] == name), None)
     
     if not member_data:
@@ -76,7 +73,7 @@ def member_profile(params, name, is_post=False):
         comp.Container([
             comp.Card([
                 comp.Row([
-                    comp.Image(url=member_data["img"], size="200px", border=True),
+                    comp.Image(url=member_data.get("img", "placeholder.png"), size="200px", border=True),
                     comp.Container([
                         comp.Text(f"Profile: {name}", size="32px", bold=True, color="#00ffcc"),
                         comp.Text("Role: Family Member", color="#888"),
@@ -90,6 +87,7 @@ def member_profile(params, name, is_post=False):
 @web.page("/add")
 def add_page(params, is_post=False):
     if is_post:
+        # 'params' now includes the filename from the upload
         web.data["members"].append(params)
         web.app_logic.save(web.data)
 
@@ -98,13 +96,17 @@ def add_page(params, is_post=False):
         comp.Container([
             comp.Card([
                 comp.Text("Register New Member", size="22px", bold=True),
-                comp.Form(action_url="/add", submit_text="Authorize Member", items=[
+                # Note the has_files=True here!
+                comp.Form(action_url="/add", submit_text="Authorize Member", has_files=True, items=[
                     comp.TextInput(label="Full Name", name="name", placeholder="Enter name..."),
-                    comp.TextInput(label="Image Path", name="img", placeholder="e.g. dad.jpg")
+                    # New FileUpload Component replacing TextInput
+                    comp.FileUpload(label="Profile Picture", name="img")
                 ])
             ])
         ])
     ])
-
+@web.page("/bug")
+def bug_page(params):
+    return 10 / 0  # This will trigger the Error Boundary!
 if __name__ == "__main__":
     web.start()

@@ -3,6 +3,7 @@ class Component:
     def render(self):
         return ""
 
+
 # --- BASIC TYPOGRAPHY ---
 
 class Text(Component):
@@ -51,18 +52,35 @@ class Row(Component):
         """
 
 # --- FORM ELEMENTS ---
+class FileUpload(Component):
+    """A stylized file input field."""
+    def __init__(self, label, name, accept="image/*"):
+        self.label = label
+        self.name = name
+        self.accept = accept
 
+    def render(self):
+        return f"""
+        <div style="margin: 10px; width: 100%; max-width: 300px; font-family: sans-serif;">
+            <label style="display: block; font-size: 12px; margin-bottom: 5px; color: #888;">{self.label}</label>
+            <input type="file" name="{self.name}" accept="{self.accept}" 
+                   style="width: 100%; padding: 8px; border-radius: 4px; border: 1px dashed #555; background: #222; color: white; cursor: pointer;">
+        </div>
+        """
 class Form(Component):
-    """Generic POST form wrapper."""
-    def __init__(self, action_url, items, submit_text="Submit"):
+    """Generic POST form wrapper. Updated to support File Uploads."""
+    def __init__(self, action_url, items, submit_text="Submit", has_files=False):
         self.action_url = action_url
         self.items = items
         self.submit_text = submit_text
+        # If the form has a FileUpload component, we need this specific encoding
+        self.enctype = 'enctype="multipart/form-data"' if has_files else ""
 
     def render(self):
         content = "".join([i.render() for i in self.items])
         return f"""
-        <form action="{self.action_url}" method="POST" style="display: flex; flex-direction: column; align-items: center;">
+        <form action="{self.action_url}" method="POST" {self.enctype} 
+              style="display: flex; flex-direction: column; align-items: center;">
             {content}
             <button type="submit" style="margin-top: 20px; padding: 12px 30px; background: #444; 
                     color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
