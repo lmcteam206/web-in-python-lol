@@ -1,0 +1,22 @@
+{
+    "name": "Sung Jin-Woo",
+    "level": 1,
+    "exp": 0,
+    "exp_to_next": 100,
+    "job": "None",
+    "rank": "E-Rank",
+    "stats": {
+        "STR": 10,
+        "AGI": 10,
+        "VIT": 10,
+        "INT": 10,
+        "SEN": 10
+    },
+    "points": 0,
+    "daily_quest": {
+        "pushups": 323,
+        "situps": 0,
+        "running": 0,
+        "completed": false
+    }
+}
