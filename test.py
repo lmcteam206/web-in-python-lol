@@ -1,132 +1,93 @@
 import random
 from Engine.core import *
-# Initialize the WebApp
-app = WebApp("player_status.json")
+app = WebApp("game_state.json")
 
-# --- System Logic Helpers ---
+# Initialize game state in the library's storage
+if "pos" not in app.data:
+    app.data = {"pos": 200, "vel": 0, "score": 0, "pipe_x": 400, "pipe_h": 150, "dead": False}
+    app.app_logic.save(app.data)
 
-def get_player_data():
-    default = {
-        "name": "Sung Jin-Woo",
-        "level": 1,
-        "exp": 0,
-        "exp_to_next": 100,
-        "job": "None",
-        "rank": "E-Rank",
-        "stats": {"STR": 10, "AGI": 10, "VIT": 10, "INT": 10, "SEN": 10},
-        "points": 0,
-        "daily_quest": {"pushups": 0, "situps": 0, "running": 0, "completed": False}
-    }
-    if not app.data:
-        app.data = default
-        app.app_logic.save(app.data)
-    return app.data
-
-# --- Routes ---
+def check_collision():
+    d = app.data
+    # Check if bird hits floor or ceiling
+    if d["pos"] > 400 or d["pos"] < 0: return True
+    # Check if bird is inside the pipe's X range
+    if 50 < d["pipe_x"] < 100:
+        # Check if bird is NOT in the gap
+        if d["pos"] < d["pipe_h"] or d["pos"] > d["pipe_h"] + 100:
+            return True
+    return False
 
 @app.page("/")
-def dashboard(params, is_post=False):
-    player = get_player_data()
+def game_view(params, is_post=False):
+    d = app.data
     
-    # Progress Bar Calculation
-    progress = (player['exp'] / player['exp_to_next']) * 100
+    if d["dead"]:
+        return app.build_page([
+            Container([
+                Text("GAME OVER", size="40px", bold=True, color="#ff4b4b", align="center"),
+                Text(f"Final Score: {d['score']}", align="center"),
+                Text('<a href="/reset" style="color:#00ffcc;">Try Again</a>', align="center")
+            ])
+        ])
+
+    # Draw the "Graphics" using CSS and DIVs via your Text component
+    # The bird is a gold square, pipes are green blocks
+    game_world = f"""
+    <div style="position:relative; width:400px; height:400px; background:#000; overflow:hidden; border:2px solid #333; margin:auto;">
+        <div style="position:absolute; left:50px; top:{d['pos']}px; width:20px; height:20px; background:gold;"></div>
+        <div style="position:absolute; left:{d['pipe_x']}px; top:0; width:40px; height:{d['pipe_h']}px; background:green;"></div>
+        <div style="position:absolute; left:{d['pipe_x']}px; top:{d['pipe_h']+100}px; width:40px; height:400px; background:green;"></div>
+    </div>
+    """
 
     return app.build_page([
         Container([
+            Text("Python-Powered Flap", size="30px", bold=True, align="center"),
+            Text(game_world),
             Row([
-                # Left Column: Profile Card
-                Card([
-                    Image("https://i.imgur.com/your_avatar_here.png", size="150px", circular=True),
-                    Text(f"{player['name']}", size="28px", bold=True, align="center", color="#00ffcc"),
-                    Text(f"Rank: {player['rank']} | Job: {player['job']}", align="center", color="#888"),
-                    Text(f"Level: {player['level']}", size="20px", bold=True, align="center"),
-                    # EXP Bar
-                    Text(f"EXP: {player['exp']} / {player['exp_to_next']}", size="12px", color="#aaa"),
-                    Text(f'<div style="width:100%; background:#333; height:8px; border-radius:4px;">'
-                         f'<div style="width:{progress}%; background:#00ffcc; height:100%; border-radius:4px; box-shadow: 0 0 10px #00ffcc;"></div>'
-                         f'</div>'),
-                ]),
-                
-                # Right Column: Stats & Allocation
-                Card([
-                    Text("Ability Stats", size="22px", bold=True, color="#00ffcc"),
-                    Text(f"Available Points: {player['points']}", color="#ff4b4b", bold=True),
-                    Row([
-                        Text(f"STR: {player['stats']['STR']}"),
-                        Text(f"AGI: {player['stats']['AGI']}"),
-                        Text(f"VIT: {player['stats']['VIT']}"),
-                    ], justify="space-between"),
-                    Row([
-                        Text(f"INT: {player['stats']['INT']}"),
-                        Text(f"SEN: {player['stats']['SEN']}"),
-                        Text("") # Spacer
-                    ], justify="space-between"),
-                    
-                    Text("<hr style='border: 1px solid #2a2a2a; margin: 20px 0;'>"),
-                    
-                    Form("/add_stat", [
-                        TextInput("Stat Name (STR, AGI, etc.)", "stat", "e.g., STR"),
-                    ], submit_text="Allocate 1 Point")
-                ])
+                Text('<a href="/action?do=jump" style="padding:15px 30px; background:#fff; color:#000; text-decoration:none; border-radius:8px; font-weight:bold;">JUMP</a>'),
+                Text('<a href="/action?do=wait" style="padding:15px 30px; background:#333; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold;">WAIT</a>')
             ]),
-            
-            # Daily Quest Section
-            Card([
-                Text("Daily Quest: Preparation to Become Strong", size="22px", bold=True, color="#ffcc00"),
-                Text("Status: " + ("COMPLETED" if player['daily_quest']['completed'] else "INCOMPLETE"), 
-                     color=("#00ffcc" if player['daily_quest']['completed'] else "#ff4b4b")),
-                
-                Row([
-                    Text(f"Pushups: {player['daily_quest']['pushups']}/100"),
-                    Text(f"Situps: {player['daily_quest']['situps']}/100"),
-                    Text(f"Running: {player['daily_quest']['running']}/10km"),
-                ], justify="space-around"),
-                
-                Form("/train", [
-                    TextInput("Exercise (pushups/situps/running)", "type"),
-                    TextInput("Amount", "amount", type="number")
-                ], submit_text="Register Training")
-            ], bg="#1a1a2e")
+            Text(f"Score: {d['score']}", align="center", size="20px")
         ])
     ])
 
-@app.page("/add_stat")
-def add_stat(params, is_post=False):
-    if is_post:
-        player = get_player_data()
-        stat = params.get("stat", "").upper()
-        if player['points'] > 0 and stat in player['stats']:
-            player['stats'][stat] += 1
-            player['points'] -= 1
-            app.app_logic.save(player)
-    return ""
+@app.page("/action")
+def handle_action(params, is_post=False):
+    d = app.data
+    if d["dead"]: return ""
 
-@app.page("/train")
-def train(params, is_post=False):
-    if is_post:
-        player = get_player_data()
-        ex_type = params.get("type", "").lower()
-        amount = int(params.get("amount", 0))
-        
-        if ex_type in player['daily_quest']:
-            player['daily_quest'][ex_type] += amount
-            
-            # Check for completion
-            dq = player['daily_quest']
-            if dq['pushups'] >= 100 and dq['situps'] >= 100 and dq['running'] >= 10 and not dq['completed']:
-                dq['completed'] = True
-                # Reward: Level up + Points
-                player['exp'] += 50
-                player['points'] += 3
-                
-                # Level up logic
-                if player['exp'] >= player['exp_to_next']:
-                    player['level'] += 1
-                    player['exp'] = 0
-                    player['exp_to_next'] = int(player['exp_to_next'] * 1.5)
-            
-            app.app_logic.save(player)
-    return ""
+    # 1. Physics: Gravity
+    action = params.get("do")
+    if action == "jump":
+        d["vel"] = -40
+    else:
+        d["vel"] += 10 # Gravity pull
+    
+    d["pos"] += d["vel"]
+    
+    # 2. Move Pipes
+    d["pipe_x"] -= 30
+    if d["pipe_x"] < -40:
+        d["pipe_x"] = 400
+        import random
+        d["pipe_h"] = random.randint(50, 250)
+        d["score"] += 1
+
+    # 3. Collision
+    if check_collision():
+        d["dead"] = True
+
+    app.app_logic.save(d)
+    # Redirect back to home to see updated state
+    return "<html><script>window.location.href='/'</script></html>"
+
+@app.page("/reset")
+def reset(params, is_post=False):
+    app.data = {"pos": 200, "vel": 0, "score": 0, "pipe_x": 400, "pipe_h": 150, "dead": False}
+    app.app_logic.save(app.data)
+    return "<html><script>window.location.href='/'</script></html>"
 
 if __name__ == "__main__":
     app.start(port=8080)

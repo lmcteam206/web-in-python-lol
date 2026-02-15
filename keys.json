@@ -1,5 +1,0 @@
-{
-    "DEV-123": {"owner": "Admin", "status": "active"},
-    "FRIEND-555": {"owner": "Bob", "status": "active"},
-    "SCAMMER-999": {"owner": "Unknown", "status": "banned"}
-}
