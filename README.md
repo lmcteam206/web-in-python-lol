@@ -1,30 +1,31 @@
-# 🌑 web-in-python-lol Framework
 
-**web-in-python-lol** is a lightweight, general-purpose Python web framework designed for speed, simplicity, and composition. It moves away from complex HTML templates, allowing you to build full-stack web applications using pure Python "Components."
+---
 
-nodemon --exec python test.py  
+# 🌑 web-in-python-lol
+
+**web-in-python-lol** is a lightweight, zero-dependency Python web framework designed for absolute simplicity. It replaces complex HTML templates and messy SQL with pure Python **Components** and an integrated **Smart-Store** database.
+
+
 ---
 
 ## 🚀 Key Features
 
-* **Dynamic Regex Routing**: Create flexible URLs with variables (e.g., `/member/(.+)`) that pass variables directly to your functions.
-* **Built-in Error Boundaries**: A specialized safety net that catches logic crashes and renders a beautiful developer-friendly debug page instead of killing the server.
-* **Automatic Persistence**: Integrated `Application` class that handles loading and saving JSON data automatically.
-* **Multipart File Handling**: Native support for binary image uploads without external libraries.
-* **Zero Dependencies**: Built entirely on the Python Standard Library (HTTP, CGI, Re, Json).
+* **Smart Persistence**: Forget `json.loads` and `json.dumps`. Use `app.fetch()` and `app.store()` to save lists and dictionaries directly to SQLite.
+* **Zero-Config Routing**: Define routes using Python decorators. Supports Regex for dynamic URLs (e.g., `/user/(\d+)`).
+* **Component-Driven UI**: Build your interface using Python classes like `Card()`, `Row()`, and `Navbar()`.
+* **Error Boundaries**: If your logic crashes, the engine catches it and displays a developer-friendly traceback in the browser instead of killing the server.
+* **Live-Polling**: The browser automatically refreshes when the database is updated.
 
 ---
 
 ## 📦 Project Structure
 
 ```text
-api_maker/
+my_app/
 ├── Engine/
-│   ├── core.py      # The Engine (Routing, Server, Error Boundaries)
-│   └── comp.py      # UI Components (Text, Card, Row, Form)
-├── save.json        # Automatic Data Storage
-├── app.py           # Your Application Logic (The "Hunter" code)
-└── [images].jpg     # Uploaded binary files
+│   └── core.py       # The Engine (Routing, Server, Components)
+├── work_tracker.db   # Auto-created SQLite database
+└── app.py            # Your Application Logic
 
 ```
 
@@ -32,42 +33,56 @@ api_maker/
 
 ## 🛠️ Getting Started
 
-### 1. Basic Routing
+### 1. The "Smart" Database
 
-Define your pages using the `@web.page` decorator. The engine automatically handles static files and query parameters.
+No more manual JSON conversion. The framework treats your database like a persistent Python dictionary.
 
 ```python
-from Engine import core, comp
+# Saving data
+tasks = [{"id": 1, "text": "Finish Engine"}]
+app.store("tasks", tasks)
 
-web = core.WebApp()
+# Loading data (returns a real Python list)
+tasks = app.fetch("tasks", default=[])
 
-@web.page("/")
-def dashboard(params):
-    return web.build_page([
-        comp.Navbar(brand="SHADOW_OS", links={"Home": "/", "Add": "/add"}),
-        comp.Container([
-            comp.Text("System Active", size="30px", bold=True, color="#00ffcc")
+```
+
+### 2. Basic Routing & UI
+
+Build a dashboard in seconds without writing a single line of HTML.
+
+```python
+from Engine.core import WebApp, Text, Container, Card
+
+app = WebApp()
+
+@app.page("/")
+def home(app_inst, params):
+    return app_inst.build_page([
+        Container([
+            Text("Dashboard", size="32px", bold=True),
+            Card([
+                Text("Welcome to the Shadow Realm.")
+            ])
         ])
     ])
 
+app.start(port=8080)
+
 ```
 
-### 2. Dynamic Slugs
+### 3. Dynamic Slugs (Regex)
 
-Use regex in your routes to create profile pages for your data:
+Capture variables from the URL and use them in your functions.
 
 ```python
-@web.page("/member/(.+)")
-def member_profile(params, name):
-    return web.build_page([
-        comp.Text(f"Viewing Hunter: {name}")
+@app.page("/member/(.+)")
+def profile(app_inst, params, username):
+    return app_inst.build_page([
+        Text(f"Viewing profile: {username}")
     ])
 
 ```
-
-### 3. Error Handling
-
-If your code crashes, ShadowEngine stops the crash and shows you exactly what happened:
 
 ---
 
@@ -75,25 +90,26 @@ If your code crashes, ShadowEngine stops the crash and shows you exactly what ha
 
 | Component | Description |
 | --- | --- |
-| `Container` | Keeps content centered and readable. |
-| `Row` | A flexbox wrapper for side-by-side elements. |
-| `Card` | A grouping element with background and shadows. |
-| `FileUpload` | A binary input field for images and files. |
-| `Form` | Handles POST requests and file encoding. |
+| **Container** | Centered wrapper (max-width: 1000px). |
+| **Row** | Flexbox row for side-by-side elements. |
+| **Card** | Glass-morphism container with borders. |
+| **Form** | Handles POST requests automatically. |
+| **TextInput** | Styled input fields (supports hidden types). |
 
 ---
 
 ## ⚙️ How it Works
 
-1. **Request**: The `ShadowEngine` receives a request and checks it against `routes`.
-2. **Boundary**: The engine enters a `try-except` block (Error Boundary).
-3. **Logic**: Your function runs, pulling data from `web.data` (loaded from `save.json`).
-4. **Render**: Your Python components are converted into HTML strings.
-5. **Response**: The raw HTML is sent back to the browser.
+1. **Request**: `ShadowEngine` captures the incoming HTTP request.
+2. **Route Match**: It uses Regex to find the matching function in `routes`.
+3. **The Boundary**: The function is executed inside a `try-except` block.
+4. **Auto-JSON**: If you call `app.fetch()`, the engine pulls from SQLite and deserializes the JSON string back into a Python object for you.
+5. **Render**: Components are flattened into a single HTML string and injected into a base template.
+6. **Polling**: A background script in the browser checks the `updated_at` timestamp in the DB every 1.5 seconds to trigger auto-refresh.
 
 ---
 
 ## 🛡️ License
 
-Built by Hunters, for Hunters. This project is open-source.
+Built for the fast-movers. Open-source and zero-dependency.
 

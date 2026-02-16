@@ -1,350 +1,233 @@
-import requests
-import json
+import sqlite3
 import os
-import mimetypes
 import re
-import cgi 
-import traceback # Added to capture error details
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import mimetypes
+import cgi
+import traceback
 import threading
 import webbrowser
+import json
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
-class Application:
-    """Handles generic JSON data persistence."""
-    def __init__(self, filename="save.json"):
-        self.filename = filename
+class Database:
+    """A 'Smart Dictionary' style database that handles JSON automatically."""
+    def __init__(self, db_name="system_data.db"):
+        self.db_name = db_name
+        self._init_db()
 
-    def save(self, data):
-        with open(self.filename, "w") as f:
-            json.dump(data, f, indent=4)
+    def _init_db(self):
+        with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS storage (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
 
-    def load(self):
-        if not os.path.exists(self.filename):
-            return {}
-        with open(self.filename, "r") as f:
-            try:
-                return json.load(f)
-            except:
-                return {}
-            
+    def save(self, key, data):
+        """Save anything (list, dict, string) without worrying about JSON."""
+        # Convert to JSON string automatically
+        serialized_data = json.dumps(data)
+        with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO storage (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)", 
+                (key, serialized_data)
+            )
+            conn.commit()
+
+    def load(self, key, default=None):
+        """Load data and turn it back into a Python object automatically."""
+        with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
+            cursor = conn.execute("SELECT value FROM storage WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            if row:
+                try:
+                    # Convert back from JSON string to Python list/dict
+                    return json.loads(row[0])
+                except:
+                    return row[0]
+            return default
+
+    def get_last_update(self):
+        with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
+            cursor = conn.execute("SELECT MAX(updated_at) FROM storage")
+            res = cursor.fetchone()
+            return res[0] if res else "0"
+
 class ShadowEngine(BaseHTTPRequestHandler):
     routes = [] 
 
-    def render_error(self, err, tb_info):
-        """Beautifully renders a system crash page."""
-        return f"""
-        <div style="max-width: 800px; margin: 50px auto; background: #1a1a1a; border-left: 5px solid #ff4b4b; padding: 30px; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
-            <h1 style="color: #ff4b4b; margin-top: 0; font-family: 'Courier New', Courier, monospace;">[SYSTEM_CRASH]</h1>
-            <p style="color: #eee; font-size: 18px;">The engine encountered a logic error while rendering this gate.</p>
-            <div style="background: #000; padding: 20px; border-radius: 4px; overflow-x: auto;">
-                <code style="color: #ff4b4b; font-weight: bold;">Error: {err}</code>
-                <pre style="color: #888; font-size: 12px; margin-top: 15px; white-space: pre-wrap;">{tb_info}</pre>
-            </div>
-            <p style="margin-top: 20px;"><a href="/" style="color: #00ffcc; text-decoration: none;">&larr; Return to Dashboard</a></p>
-        </div>
-        """
-
-    def find_route(self, path):
-        for pattern, _, func in self.routes:
-            match = pattern.match(path)
-            if match:
-                return func, match.groups()
-        return None, []
-
     def do_GET(self):
-        if self.path == '/__ping__':
+        if self.path == '/__poll__':
             self.send_response(200)
             self.end_headers()
-            self.wfile.write(b"pong")
+            last_ts = self.server.app_instance.db.get_last_update()
+            self.wfile.write(bytes(str(last_ts), "utf-8"))
             return
+
         parsed_url = urlparse(self.path)
         path = parsed_url.path
         query_params = {k: v[0] for k, v in parse_qs(parsed_url.query).items()}
-
-        requested_file = path.lstrip("/")
-        if requested_file and os.path.isfile(requested_file):
-            self.send_response(200)
-            mime_type, _ = mimetypes.guess_type(requested_file)
-            self.send_header("Content-type", mime_type or "application/octet-stream")
-            self.end_headers()
-            with open(requested_file, "rb") as f:
-                self.wfile.write(f.read())
-            return 
-
         func, args = self.find_route(path)
-        
-        # --- START ERROR BOUNDARY ---
+        app_instance = self.server.app_instance
+
         self.send_response(200)
         self.send_header("Content-type", "text/html")
         self.end_headers()
 
         if func:
             try:
-                page_content = func(query_params, *args)
+                page_content = func(app_instance, query_params, *args)
             except Exception as e:
-                # Catch the error and the traceback
-                tb_info = traceback.format_exc()
-                page_content = self.render_error(e, tb_info)
+                page_content = f"<div style='color:red;'>{traceback.format_exc()}</div>"
         else:
-            page_content = "<h1 style='text-align:center; margin-top:50px;'>404: Gate Not Found</h1>"
+            page_content = "<h1>404 Not Found</h1>"
 
-        auto_refresh_script = """
+        realtime_script = """
         <script>
-            let lastCheck = Date.now();
+            let lastUpdate = null;
             setInterval(async () => {
                 try {
-                    const response = await fetch('/__ping__');
-                    if (response.ok) {
-                        // Optional: You could compare a server-side timestamp here 
-                        // to trigger reload only on code changes.
-                    }
-                } catch (e) {
-                    // Server is likely restarting...
-                    console.log("Server unreachable, waiting to reconnect...");
-                    setTimeout(() => location.reload(), 1000);
-                }
-            }, 1000);
+                    const res = await fetch('/__poll__');
+                    const ts = await res.text();
+                    if (lastUpdate && ts !== lastUpdate) location.reload();
+                    lastUpdate = ts;
+                } catch (e) {}
+            }, 1500);
         </script>
         """
-        full_html = f"""
-        <!DOCTYPE html>
-        <html>
-            <head>
-                <style>body{{margin:0;padding:0;background:#0e1117;color:white;font-family:sans-serif;}}</style>
-                {auto_refresh_script}
-            </head>
-            <body>{page_content}</body>
-        </html>
-        """
+        
+        full_html = f"<!DOCTYPE html><html><head>{realtime_script}<style>body{{margin:0;background:#0e1117;color:white;font-family:sans-serif;}}</style></head><body>{page_content}</body></html>"
         self.wfile.write(bytes(full_html, "utf-8"))
 
     def do_POST(self):
-        try:
-            form = cgi.FieldStorage(
-                fp=self.rfile,
-                headers=self.headers,
-                environ={'REQUEST_METHOD': 'POST',
-                         'CONTENT_TYPE': self.headers['Content-Type']}
-            )
+        length = int(self.headers.get('content-length', 0))
+        body = self.rfile.read(length).decode('utf-8')
+        params = {k: v[0] for k, v in parse_qs(body).items()}
+        
+        path = urlparse(self.path).path
+        func, args = self.find_route(path)
+        
+        if func:
+            func(self.server.app_instance, params, *args, is_post=True)
+        
+        self.send_response(303)
+        self.send_header('Location', self.headers.get('Referer', '/'))
+        self.end_headers()
 
-            params = {}
-            for key in form.keys():
-                field_item = form[key]
-                if field_item.filename:
-                    file_data = field_item.file.read()
-                    with open(field_item.filename, "wb") as f:
-                        f.write(file_data)
-                    params[key] = field_item.filename
-                else:
-                    params[key] = field_item.value
-            
-            path = urlparse(self.path).path
-            func, args = self.find_route(path)
-            
-            if func:
-                func(params, *args, is_post=True)
-
-            self.send_response(303)
-            self.send_header('Location', '/')
-            self.end_headers()
-        except Exception as e:
-            # If POST fails, we show the error instead of redirecting
-            self.send_response(500)
-            self.send_header("Content-type", "text/html")
-            self.end_headers()
-            tb_info = traceback.format_exc()
-            err_page = f"<!DOCTYPE html><html><body style='background:#0e1117;color:white;font-family:sans-serif;'>{self.render_error(e, tb_info)}</body></html>"
-            self.wfile.write(bytes(err_page, "utf-8"))
+    def find_route(self, path):
+        for pattern, _, func in self.routes:
+            match = pattern.match(path)
+            if match: return func, match.groups()
+        return None, []
 
 class WebApp:
-    def __init__(self, storage_file="save.json"):
-        self.app_logic = Application(storage_file) 
-        self.data = self.app_logic.load()
+    def __init__(self, storage_file="work_tracker.db"):
+        self.db = Database(storage_file)
+
+    def store(self, key, value):
+        """Easy-to-remember name for saving data."""
+        self.db.save(key, value)
+
+    def fetch(self, key, default=None):
+        """Easy-to-remember name for getting data."""
+        return self.db.load(key, default)
 
     def page(self, path):
         def wrapper(func):
-            regex_path = re.compile(f"^{path}$")
-            ShadowEngine.routes.append((regex_path, path, func))
+            ShadowEngine.routes.append((re.compile(f"^{path}$"), path, func))
             return func
         return wrapper
-    
+
     def build_page(self, components):
         return "".join([c.render() for c in components])
-    
-    def start(self, port=8080,open_browser=False):
-        print(f"Engine Online. Access at http://localhost:{port}")
+
+    def start(self, port=8080, open_browser=False):
         server = HTTPServer(("localhost", port), ShadowEngine)
         server.app_instance = self 
-        if open_browser:
-            threading.Timer(1, lambda: webbrowser.open(f"http://localhost:{port}")).start()
+        if open_browser: threading.Timer(1, lambda: webbrowser.open(f"http://localhost:{port}")).start()
+        print(f"ShadowEngine running on port {port}")
         server.serve_forever()
 
-class Component:
-    """Base class with a helper to merge style dictionaries."""
-    def __init__(self, style=None):
-        self.base_style = {}
-        self.user_style = style or {}
+######################################################################
+######################################################################        
+######################################################################
+####################### COMPONENTS ###################################
+######################################################################
+######################################################################
+######################################################################
 
-    def get_style(self):
-        # Merges defaults with user overrides into a CSS string
-        final_style = {**self.base_style, **self.user_style}
-        return "; ".join([f"{k.replace('_', '-')}: {v}" for k, v in final_style.items()])
+class Component:
+    def __init__(self, style=None): self.user_style = style or {}
+    def get_style(self): return "; ".join([f"{k}: {v}" for k, v in self.user_style.items()])
 
 class Text(Component):
-    def __init__(self, content, bold=False, style=None):
+    def __init__(self, content, bold=False, size="16px", color="#fff", style=None):
         super().__init__(style)
-        self.content = content
-        self.base_style = {
-            "color": "#ffffff",
-            "font-size": "16px",
-            "font-family": "'Inter', sans-serif",
-            "font-weight": "700" if bold else "400",
-            "margin": "10px 0",
-            "line-height": "1.6"
-        }
+        self.content, self.bold, self.size, self.color = content, bold, size, color
+    def render(self): return f'<div style="color:{self.color}; font-size:{self.size}; font-weight:{"bold" if self.bold else "normal"}; {self.get_style()}">{self.content}</div>'
 
+class TextInput(Component):
+    def __init__(self, label, name, placeholder="", type="text", value=None):
+        super().__init__()
+        self.label, self.name, self.placeholder, self.type, self.value = label, name, placeholder, type, value
     def render(self):
-        return f'<div style="{self.get_style()}">{self.content}</div>'
+        val_attr = f'value="{self.value}"' if self.value is not None else ""
+        if self.type == "hidden":
+            return f'<input type="hidden" name="{self.name}" {val_attr}>'
+        return f'<div style="margin-bottom:15px;"><label style="display:block;margin-bottom:5px;font-size:12px;color:#888;">{self.label}</label><input type="{self.type}" name="{self.name}" placeholder="{self.placeholder}" {val_attr} style="width:100%;padding:10px;background:#000;border:1px solid #333;color:#fff;border-radius:5px;"></div>'
 
 class Card(Component):
     def __init__(self, items, style=None):
         super().__init__(style)
         self.items = items
-        self.base_style = {
-            "background": "#161616",
-            "padding": "30px",
-            "border-radius": "20px",
-            "border": "1px solid #2a2a2a",
-            "box-shadow": "0 10px 30px rgba(0,0,0,0.3)",
-            "flex": "1"
-        }
-
     def render(self):
         content = "".join([i.render() for i in self.items])
-        return f'<div style="{self.get_style()}">{content}</div>'
-
-class Image(Component):
-    def __init__(self, url, circular=False, style=None):
-        super().__init__(style)
-        self.url = url
-        self.base_style = {
-            "width": "100%",
-            "height": "auto",
-            "border-radius": "50%" if circular else "12px",
-            "display": "block",
-            "object-fit": "cover"
-        }
-
-    def render(self):
-        # Wrapping image in a div to allow easier positioning via style
-        return f'<img src="{self.url}" style="{self.get_style()}">'
-
-class Spacer(Component):
-    def __init__(self, height="20px"):
-        self.height = height
-    def render(self):
-        return f'<div style="height: {self.height}; width: 100%;"></div>'
-    
-class TextInput(Component):
-    def __init__(self, label, name, placeholder="", type="text", style=None):
-        super().__init__(style)
-        self.label = label
-        self.name = name
-        self.placeholder = placeholder
-        self.type = type
-        self.base_style = {
-            "width": "100%",
-            "padding": "12px",
-            "border-radius": "8px",
-            "border": "1px solid #333",
-            "background": "#000",
-            "color": "#fff",
-            "margin-bottom": "15px",
-            "box-sizing": "border-box"
-        }
-
-    def render(self):
-        return f"""
-        <div style="margin-bottom: 15px;">
-            <label style="color:#888; font-size:12px; display:block; margin-bottom:5px;">{self.label}</label>
-            <input type="{self.type}" name="{self.name}" placeholder="{self.placeholder}" style="{self.get_style()}">
-        </div>
-        """
+        return f'<div style="background:rgba(255,255,255,0.05); padding:20px; border-radius:12px; border:1px solid #333; {self.get_style()}">{content}</div>'
 
 class Button(Component):
-    def __init__(self, text, style=None):
+    def __init__(self, text, primary=True, style=None):
         super().__init__(style)
-        self.text = text
-        self.base_style = {
-            "background": "#ffffff",
-            "color": "#000000",
-            "padding": "12px 24px",
-            "border": "none",
-            "border-radius": "8px",
-            "font-weight": "bold",
-            "cursor": "pointer",
-            "width": "100%"
-        }
-
+        self.text, self.primary = text, primary
     def render(self):
-        return f'<button type="submit" style="{self.get_style()}">{self.text}</button>'    
+        bg = "#6366f1" if self.primary else "#444"
+        return f'<button type="submit" style="background:{bg}; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold; {self.get_style()}">{self.text}</button>'
 
-class Container(Component):
-    def __init__(self, items, style=None):
+class Form(Component):
+    def __init__(self, action, items, style=None):
         super().__init__(style)
-        self.items = items
-        self.base_style = {
-            "max-width": "1100px",
-            "margin": "0 auto",
-            "padding": "40px 20px",
-            "box-sizing": "border-box"
-        }
-
+        self.action, self.items = action, items
     def render(self):
         content = "".join([i.render() for i in self.items])
-        return f'<div style="{self.get_style()}">{content}</div>'
+        return f'<form action="{self.action}" method="POST" style="{self.get_style()}">{content}</form>'
 
 class Row(Component):
     def __init__(self, items, style=None):
         super().__init__(style)
         self.items = items
-        self.base_style = {
-            "display": "flex",
-            "flex-wrap": "wrap",
-            "gap": "20px",
-            "justify-content": "center",
-            "align-items": "stretch",
-            "width": "100%"
-        }
-
     def render(self):
-        content = "".join([i.render() for i in self.items])
-        return f'<div style="{self.get_style()}">{content}</div>'
+        content = "".join([f'<div style="flex:1;">{i.render()}</div>' for i in self.items])
+        return f'<div style="display:flex; gap:20px; {self.get_style()}">{content}</div>'
 
-class Form(Component):
-    def __init__(self, action_url, items, submit_text="Continue", has_files=False, style=None):
+class Container(Component):
+    def __init__(self, items, style=None):
         super().__init__(style)
-        self.action_url = action_url
         self.items = items
-        self.submit_text = submit_text
-        self.enctype = 'enctype="multipart/form-data"' if has_files else ""
-        self.base_style = {
-            "display": "flex",
-            "flex-direction": "column",
-            "width": "100%",
-            "max-width": "400px",
-            "margin": "0 auto"
-        }
-
     def render(self):
-        # We reuse the Button component for the submit action
         content = "".join([i.render() for i in self.items])
-        submit_btn = Button(self.submit_text).render()
-        
-        return f"""
-        <form action="{self.action_url}" method="POST" {self.enctype} style="{self.get_style()}">
-            {content}
-            {submit_btn}
-        </form>
-        """    
+        return f'<div style="max-width:1000px; margin:0 auto; padding:40px; {self.get_style()}">{content}</div>'
+
+class Navbar(Component):
+    def __init__(self, active, links):
+        super().__init__()
+        self.active, self.links = active, links
+    def render(self):
+        btns = "".join([f'<a href="{u}" style="color:{"#fff" if self.active==u else "#666"}; text-decoration:none; font-weight:bold; font-size:14px; padding: 10px;">{n}</a>' for n, u in self.links])
+        return f'<nav style="padding:20px 40px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center;"><b>SHADOW<span style="color:#6366f1">UI</span></b><div style="display:flex; gap:10px;">{btns}</div></nav>'
+
+class Spacer(Component):
+    def __init__(self, size): super().__init__(); self.size = size
+    def render(self): return f'<div style="height:{self.size};"></div>'

@@ -1,58 +1,97 @@
-from Engine.core import * # Ensure your engine code is in core.py
+from Engine.core import *
 
-app = WebApp("shadow_os.json")
+app = WebApp("work_tracker.db")
 
-# --- INITIALIZE MULTI-FEATURE DATA ---
-if "tasks" not in app.data:
-    app.data = {
-        "tasks": ["do homework",],
-        "Schedule": {"school":"6am",},
-        "logs": ["System Initialized..."],
-        "user": {"name": "Commander", "level": 10}
-    }
-    app.app_logic.save(app.data)
+CATEGORIES = [
+    ("Dashboard", "/"), 
+    ("Tasks", "/tasks"), 
+    ("Completed", "/completed")
+]
 
-# UI Constants
-BLUE = "#00d1ff"
-DARK = "#161616"
-
-# --- HELPER: TAB NAVIGATION ---
-def render_nav(active_tab):
-    tabs = ["Dashboard", "Schedule", "tasks", "Settings"]
-    nav_buttons = []
-    for tab in tabs:
-        is_active = tab.lower() == active_tab.lower()
-        style = {"flex": "1", "padding": "10px", "text-align": "center", 
-                 "border-bottom": f"3px solid {BLUE if is_active else 'transparent'}",
-                 "cursor": "pointer", "color": "white" if is_active else "#666"}
-        
-        # We use a link for navigation
-        nav_buttons.append(f'<a href="/?tab={tab.lower()}" style="text-decoration:none;{"; ".join([f"{k}:{v}" for k,v in style.items()])}">{tab}</a>')
-    
-    return f'<div style="display:flex; background:#000; margin-bottom:30px;">{"".join(nav_buttons)}</div>'
-
-# --- MAIN CONTROLLER ---
 @app.page("/")
-def main_handler(params, is_post=True):
-    current_tab = params.get("tab", "dashboard")
-    content = [
-        Text("",True)
-    ]
-    if current_tab == "Dashboard":
-        content = [
-            
-        ]
-    
+def home(app, query, is_post=False):
+    tasks = app.fetch("tasks", default=[])
+    done = [t for t in tasks if t.get("done")]
+    pending = [t for t in tasks if not t.get("done")]
 
-    # Final Render
     return app.build_page([
+        Navbar("/", CATEGORIES),
         Container([
-            Text("SHADOW OS v1.0", bold=True, style={"letter-spacing":"10px", "text-align":"center"}),
-            Spacer("10px"),
-            Text(render_nav(current_tab)), # Inject Nav
-            *content
+            Text("Overview", size="32px", bold=True),
+            Spacer("20px"),
+            Row([
+                Card([Text("Total", color="#888"), Text(str(len(tasks)), size="24px", bold=True)]),
+                Card([Text("Remaining", color="#888"), Text(str(len(pending)), size="24px", bold=True, color="#facc15")]),
+                Card([Text("Success", color="#888"), Text(str(len(done)), size="24px", bold=True, color="#4ade80")])
+            ])
+        ])
+    ])
+
+@app.page("/tasks")
+def task_manager(app, query, is_post=False):
+    tasks = app.fetch("tasks", default=[])
+
+    if is_post and query.get("task_name"):
+        # Add the new task to our list
+        tasks.append({"id": len(tasks), "name": query.get("task_name"), "done": False})
+        # Just store! No more json.dumps() needed.
+        app.store("tasks", tasks)
+
+    pending_list = [
+        Card([
+            Row([
+                Text(t["name"], bold=True),
+                Form("/complete-task", [
+                    TextInput("", "task_id", type="hidden", value=str(t["id"])),
+                    Button("Done", primary=False),
+                ]),
+            ], style={"align-items": "center", "justify-content": "space-between"})
+        ], style={"margin-bottom": "10px"}) 
+        for t in tasks if not t.get("done")
+    ]
+
+    return app.build_page([
+        Navbar("/tasks", CATEGORIES),
+        Container([
+            Text("Pending Work", size="32px", bold=True),
+            Spacer("20px"),
+            Card([
+                Text("New Task"),
+                Form("/tasks", [
+                    TextInput("", "task_name", placeholder="Enter task name..."),
+                    Button("Add Task"),
+                ]),
+            ]),
+            Spacer("20px"),
+            *(pending_list if pending_list else [Text("No pending tasks!", color="#888")])
+        ])
+    ])
+
+@app.page("/complete-task")
+def complete_logic(app, params, is_post=False):
+    if is_post:
+        tid = params.get("task_id")
+        tasks = app.fetch("tasks", default=[])
+        for t in tasks:
+            if str(t["id"]) == str(tid):
+                t["done"] = True
+        app.store("tasks", tasks)
+    return "" 
+
+@app.page("/completed")
+def completed_page(app, query, is_post=False):
+    tasks = app.fetch("tasks", default=[])
+    done_items = [
+        Card([Text(t["name"], color="#4ade80")]) for t in tasks if t.get("done")
+    ]
+    return app.build_page([
+        Navbar("/completed", CATEGORIES),
+        Container([
+            Text("Completed Log", size="32px", bold=True),
+            Spacer("20px"),
+            *(done_items if done_items else [Text("No completed tasks.", color="#888")]),
         ])
     ])
 
 if __name__ == "__main__":
-    app.start(port=8080)
+    app.start(port=8080, open_browser=True)
