@@ -2,7 +2,7 @@
 
 **web-in-python-lol** is a lightweight, general-purpose Python web framework designed for speed, simplicity, and composition. It moves away from complex HTML templates, allowing you to build full-stack web applications using pure Python "Components."
 
-
+nodemon --exec python test.py  
 ---
 
 ## 🚀 Key Features
