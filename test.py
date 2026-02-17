@@ -1,95 +1,105 @@
 from Engine.core import *
 
-app = WebApp("work_tracker.db")
+app = WebApp("landing_page.db")
 
-CATEGORIES = [
-    ("Dashboard", "/"), 
-    ("Tasks", "/tasks"), 
-    ("Completed", "/completed")
+# Simple Nav for a Landing Page
+NAV_LINKS = [
+    ("Docs", "#"), 
+    ("Components", "#"), 
+    ("GitHub", "https://github.com")
 ]
 
 @app.page("/")
-def home(app, query, is_post=False):
-    tasks = app.fetch("tasks", default=[])
-    done = [t for t in tasks if t.get("done")]
-    pending = [t for t in tasks if not t.get("done")]
-
+def landing_page(app, query, is_post=False):
     return app.build_page([
-        Navbar("/", CATEGORIES),
+        Navbar("/", NAV_LINKS),
+        
+        # --- HERO SECTION ---
         Container([
-            Text("Overview", size="32px", bold=True),
-            Spacer("20px"),
+            Spacer("60px"),
+            Text("Build Web Apps in Pure Python.", size="48px", bold=True, style={"text-align": "center"}),
+            Spacer("10px"),
+            Text("The zero-dependency framework for hunters who hate HTML.", 
+                 size="20px", color="#888", style={"text-align": "center"}),
+            Spacer("40px"),
             Row([
-                Card([Text("Total", color="#888"), Text(str(len(tasks)), size="24px", bold=True)]),
-                Card([Text("Remaining", color="#888"), Text(str(len(pending)), size="24px", bold=True, color="#facc15")]),
-                Card([Text("Success", color="#888"), Text(str(len(done)), size="24px", bold=True, color="#4ade80")])
-            ])
-        ])
-    ])
+                # Use spacer flex to center buttons
+                Spacer("0px"), 
+                Button("Get Started →", style={"padding": "15px 40px", "font-size": "18px"}),
+                Button("View on GitHub", primary=False, style={"padding": "15px 40px", "font-size": "18px"}),
+                Spacer("0px"),
+            ], style={"justify-content": "center", "gap": "20px"}),
+            Spacer("80px"),
+        ]),
 
-@app.page("/tasks")
-def task_manager(app, query, is_post=False):
-    tasks = app.fetch("tasks", default=[])
-
-    if is_post and query.get("task_name"):
-        # Add the new task to our list
-        tasks.append({"id": len(tasks), "name": query.get("task_name"), "done": False})
-        # Just store! No more json.dumps() needed.
-        app.store("tasks", tasks)
-
-    pending_list = [
-        Card([
-            Row([
-                Text(t["name"], bold=True),
-                Form("/complete-task", [
-                    TextInput("", "task_id", type="hidden", value=str(t["id"])),
-                    Button("Done", primary=False),
-                ]),
-            ], style={"align-items": "center", "justify-content": "space-between"})
-        ], style={"margin-bottom": "10px"}) 
-        for t in tasks if not t.get("done")
-    ]
-
-    return app.build_page([
-        Navbar("/tasks", CATEGORIES),
+        # --- FEATURE GRID ---
         Container([
-            Text("Pending Work", size="32px", bold=True),
-            Spacer("20px"),
-            Card([
-                Text("New Task"),
-                Form("/tasks", [
-                    TextInput("", "task_name", placeholder="Enter task name..."),
-                    Button("Add Task"),
+            Text("Engine Features", size="14px", bold=True, color="#6366f1", style={"text-align": "center"}),
+            Spacer("10px"),
+            Text("Everything you need, nothing you don't.", size="28px", bold=True, style={"text-align": "center"}),
+            Spacer("40px"),
+            Row([
+                Card([
+                    Text("⚡ Smart Persistence", bold=True),
+                    Spacer("10px"),
+                    Text("Automatic JSON-to-SQLite serialization. No more manual parsing.", color="#888", size="14px")
                 ]),
+                Card([
+                    Text("🛡️ Error Boundaries", bold=True),
+                    Spacer("10px"),
+                    Text("Beautiful tracebacks rendered in-browser. Debug like a pro.", color="#888", size="14px")
+                ]),
+                Card([
+                    Text("🌑 ShadowUI", bold=True),
+                    Spacer("10px"),
+                    Text("Pre-styled dark mode components ready for composition.", color="#888", size="14px")
+                ])
             ]),
             Spacer("20px"),
-            *(pending_list if pending_list else [Text("No pending tasks!", color="#888")])
-        ])
-    ])
+            Row([
+                Card([
+                    Text("🔗 Regex Routing", bold=True),
+                    Spacer("10px"),
+                    Text("Dynamic URL slugs with zero configuration.", color="#888", size="14px")
+                ]),
+                Card([
+                    Text("📦 Zero Deps", bold=True),
+                    Spacer("10px"),
+                    Text("Built 100% on the Python Standard Library. No bloat.", color="#888", size="14px")
+                ]),
+                Card([
+                    # Feature placeholder
+                    Text("🚀 Live Reload", bold=True),
+                    Spacer("10px"),
+                    Text("Automatic browser refresh when the database updates.", color="#888", size="14px")
+                ])
+            ])
+        ]),
 
-@app.page("/complete-task")
-def complete_logic(app, params, is_post=False):
-    if is_post:
-        tid = params.get("task_id")
-        tasks = app.fetch("tasks", default=[])
-        for t in tasks:
-            if str(t["id"]) == str(tid):
-                t["done"] = True
-        app.store("tasks", tasks)
-    return "" 
-
-@app.page("/completed")
-def completed_page(app, query, is_post=False):
-    tasks = app.fetch("tasks", default=[])
-    done_items = [
-        Card([Text(t["name"], color="#4ade80")]) for t in tasks if t.get("done")
-    ]
-    return app.build_page([
-        Navbar("/completed", CATEGORIES),
+        # --- CODE PREVIEW SECTION ---
         Container([
-            Text("Completed Log", size="32px", bold=True),
-            Spacer("20px"),
-            *(done_items if done_items else [Text("No completed tasks.", color="#888")]),
+            Spacer("80px"),
+            Card([
+                Row([
+                    Text("app.py", color="#666", size="12px"),
+                    Text("● ● ●", color="#444", size="12px")
+                ], style={"justify-content": "space-between"}),
+                Spacer("15px"),
+                Text("from Engine.core import WebApp, Text", color="#4ade80"),
+                Text("app = WebApp()", color="#fff"),
+                Text("@app.page('/')", color="#facc15"),
+                Text("def hello(app, params):", color="#fff"),
+                Text("    return Text('Hello World')", color="#6366f1", style={"margin-left": "20px"}),
+                Spacer("15px"),
+                Text("app.start()", color="#fff"),
+            ], style={"background": "#000", "font-family": "monospace", "border": "1px solid #333"}),
+            Spacer("100px"),
+            
+            # --- FOOTER ---
+            Row([
+                Text("© 2024 web-in-python-lol", color="#444", size="12px"),
+                Text("Built by Hunters", color="#444", size="12px")
+            ], style={"justify-content": "space-between", "border-top": "1px solid #222", "padding-top": "20px"})
         ])
     ])
 
