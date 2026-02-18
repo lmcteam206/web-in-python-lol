@@ -104,4 +104,4 @@ def landing_page(app, query, is_post=False):
     ])
 
 if __name__ == "__main__":
-    app.start(port=8080, open_browser=True)
+    app.start(8080)

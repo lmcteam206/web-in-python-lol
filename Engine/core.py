@@ -89,14 +89,20 @@ class ShadowEngine(BaseHTTPRequestHandler):
         realtime_script = """
         <script>
             let lastUpdate = null;
-            setInterval(async () => {
+            async function poll() {
                 try {
-                    const res = await fetch('/__poll__');
-                    const ts = await res.text();
-                    if (lastUpdate && ts !== lastUpdate) location.reload();
-                    lastUpdate = ts;
-                } catch (e) {}
-            }, 1500);
+                    // Using cache: "no-store" ensures Cloudflare doesn't cache the poll response
+                    const res = await fetch(window.location.origin + '/__poll__', { cache: "no-store" });
+                    if (res.ok) {
+                        const ts = await res.text();
+                        if (lastUpdate && ts !== lastUpdate) {
+                            location.reload();
+                        }
+                        lastUpdate = ts;
+                    }
+                } catch (e) { console.log("Tunnel connection lost..."); }
+            }
+            setInterval(poll, 2000); 
         </script>
         """
         
@@ -146,10 +152,14 @@ class WebApp:
         return "".join([c.render() for c in components])
 
     def start(self, port=8080, open_browser=False):
-        server = HTTPServer(("localhost", port), ShadowEngine)
+        # Change "localhost" to "0.0.0.0" to allow external tunnel traffic
+        server = HTTPServer(("0.0.0.0", port), ShadowEngine) 
         server.app_instance = self 
-        if open_browser: threading.Timer(1, lambda: webbrowser.open(f"http://localhost:{port}")).start()
-        print(f"ShadowEngine running on port {port}")
+        
+        if open_browser: 
+            threading.Timer(1, lambda: webbrowser.open(f"http://localhost:{port}")).start()
+        
+        print(f"ShadowEngine running on port {port} (Cloudflare Tunnel Ready)")
         server.serve_forever()
 
 ######################################################################
