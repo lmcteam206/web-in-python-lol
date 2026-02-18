@@ -1,6 +1,8 @@
 import sqlite3
 import os
 import re
+import mimetypes
+import cgi
 import traceback
 import threading
 import webbrowser
@@ -9,6 +11,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
 class Database:
+    """A 'Smart Dictionary' style database that handles JSON automatically."""
     def __init__(self, db_name="system_data.db"):
         self.db_name = db_name
         self._init_db()
@@ -25,6 +28,8 @@ class Database:
             conn.commit()
 
     def save(self, key, data):
+        """Save anything (list, dict, string) without worrying about JSON."""
+        # Convert to JSON string automatically
         serialized_data = json.dumps(data)
         with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
             conn.execute(
@@ -34,89 +39,69 @@ class Database:
             conn.commit()
 
     def load(self, key, default=None):
+        """Load data and turn it back into a Python object automatically."""
         with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
             cursor = conn.execute("SELECT value FROM storage WHERE key = ?", (key,))
             row = cursor.fetchone()
             if row:
-                try: return json.loads(row[0])
-                except: return row[0]
+                try:
+                    # Convert back from JSON string to Python list/dict
+                    return json.loads(row[0])
+                except:
+                    return row[0]
             return default
 
     def get_last_update(self):
         with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
             cursor = conn.execute("SELECT MAX(updated_at) FROM storage")
             res = cursor.fetchone()
-            return res[0] if res and res[0] else "0"
+            return res[0] if res else "0"
 
 class ShadowEngine(BaseHTTPRequestHandler):
-    # CRITICAL: Cloudflare requires HTTP/1.1 for Tunnels
-    protocol_version = "HTTP/1.1"
     routes = [] 
 
     def do_GET(self):
-        # 1. Handle Real-time Polling
-        if self.path.startswith('/__poll__'):
-            last_ts = str(self.server.app_instance.db.get_last_update())
-            encoded_ts = bytes(last_ts, "utf-8")
-            
+        if self.path == '/__poll__':
             self.send_response(200)
-            self.send_header("Content-type", "text/plain")
-            self.send_header("Content-Length", str(len(encoded_ts)))
-            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
             self.end_headers()
-            
-            try:
-                self.wfile.write(encoded_ts)
-            except (BrokenPipeError, ConnectionResetError):
-                pass 
+            last_ts = self.server.app_instance.db.get_last_update()
+            self.wfile.write(bytes(str(last_ts), "utf-8"))
             return
 
-        # 2. Prepare Route Content
         parsed_url = urlparse(self.path)
         path = parsed_url.path
         query_params = {k: v[0] for k, v in parse_qs(parsed_url.query).items()}
         func, args = self.find_route(path)
         app_instance = self.server.app_instance
 
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+
         if func:
-            try: 
+            try:
                 page_content = func(app_instance, query_params, *args)
-            except Exception: 
-                page_content = f"<pre style='color:red;'>{traceback.format_exc()}</pre>"
+            except Exception as e:
+                page_content = f"<div style='color:red;'>{traceback.format_exc()}</div>"
         else:
             page_content = "<h1>404 Not Found</h1>"
 
-        # 3. Build HTML and CALCULATE LENGTH BEFORE SENDING HEADERS
-        realtime_script = f"""
+        realtime_script = """
         <script>
             let lastUpdate = null;
-            async function checkUpdates() {{
-                try {{
-                    const res = await fetch(window.location.origin + '/__poll__?t=' + Date.now());
-                    if (res.ok) {{
-                        const ts = await res.text();
-                        if (lastUpdate && ts !== lastUpdate) location.reload();
-                        lastUpdate = ts;
-                    }}
-                }} catch (e) {{ console.error("Tunnel Disconnected"); }}
-            }}
-            setInterval(checkUpdates, 2000);
+            setInterval(async () => {
+                try {
+                    const res = await fetch('/__poll__');
+                    const ts = await res.text();
+                    if (lastUpdate && ts !== lastUpdate) location.reload();
+                    lastUpdate = ts;
+                } catch (e) {}
+            }, 1500);
         </script>
         """
         
-        full_html = f"<!DOCTYPE html><html><head>{realtime_script}<style>body{{margin:0;background:#0e1117;color:white;font-family:sans-serif;padding:20px;}}</style></head><body>{page_content}</body></html>"
-        encoded_html = bytes(full_html, "utf-8")
-
-        # 4. Now send headers with the correct length
-        self.send_response(200)
-        self.send_header("Content-type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(encoded_html)))
-        self.end_headers()
-
-        try:
-            self.wfile.write(encoded_html)
-        except (BrokenPipeError, ConnectionResetError):
-            print("Connection closed by Cloudflare.")
+        full_html = f"<!DOCTYPE html><html><head>{realtime_script}<style>body{{margin:0;background:#0e1117;color:white;font-family:sans-serif;}}</style></head><body>{page_content}</body></html>"
+        self.wfile.write(bytes(full_html, "utf-8"))
 
     def do_POST(self):
         length = int(self.headers.get('content-length', 0))
@@ -129,9 +114,8 @@ class ShadowEngine(BaseHTTPRequestHandler):
         if func:
             func(self.server.app_instance, params, *args, is_post=True)
         
-        # 4. FIX: Use explicit redirect to root to avoid Referer issues in Tunnels
         self.send_response(303)
-        self.send_header('Location', '/')
+        self.send_header('Location', self.headers.get('Referer', '/'))
         self.end_headers()
 
     def find_route(self, path):
@@ -144,8 +128,13 @@ class WebApp:
     def __init__(self, storage_file="work_tracker.db"):
         self.db = Database(storage_file)
 
-    def store(self, key, value): self.db.save(key, value)
-    def fetch(self, key, default=None): return self.db.load(key, default)
+    def store(self, key, value):
+        """Easy-to-remember name for saving data."""
+        self.db.save(key, value)
+
+    def fetch(self, key, default=None):
+        """Easy-to-remember name for getting data."""
+        return self.db.load(key, default)
 
     def page(self, path):
         def wrapper(func):
@@ -153,17 +142,16 @@ class WebApp:
             return func
         return wrapper
 
-    def start(self, port=8080):
-        server_address = ('127.0.0.1', port)
-        server = HTTPServer(server_address, ShadowEngine)
+    def build_page(self, components):
+        return "".join([c.render() for c in components])
+
+    def start(self, port=8080, open_browser=False):
+        server = HTTPServer(("localhost", port), ShadowEngine)
         server.app_instance = self 
-        
-        print(f"\n--- ShadowEngine Online ---")
-        print(f"Listening on: http://127.0.0.1:{port}")
-        print(f"---------------------------\n")
-        
+        if open_browser: threading.Timer(1, lambda: webbrowser.open(f"http://localhost:{port}")).start()
+        print(f"ShadowEngine running on port {port}")
         server.serve_forever()
-        
+
 ######################################################################
 ######################################################################        
 ######################################################################
