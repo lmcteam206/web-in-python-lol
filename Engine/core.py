@@ -139,13 +139,12 @@ class WebApp:
         return wrapper
 
     def start(self, port=8080):
-        # 5. FIX: Bind to 0.0.0.0 to accept traffic from the Cloudflare Connector
-        server = HTTPServer(("0.0.0.0", port), ShadowEngine)
+        server_address = ('127.0.0.1', port)
+        server = HTTPServer(server_address, ShadowEngine)
         server.app_instance = self 
         
         print(f"\n--- ShadowEngine Online ---")
-        print(f"Local: http://localhost:{port}")
-        print(f"Tunnel: Point your cloudflared tunnel to http://127.0.0.1:{port}")
+        print(f"Listening on: http://127.0.0.1:{port}")
         print(f"---------------------------\n")
         
         server.serve_forever()
