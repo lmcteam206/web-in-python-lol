@@ -88,22 +88,25 @@ class ShadowEngine(BaseHTTPRequestHandler):
 
         realtime_script = """
         <script>
-            let lastUpdate = null;
-            async function poll() {
-                try {
-                    // Using cache: "no-store" ensures Cloudflare doesn't cache the poll response
-                    const res = await fetch(window.location.origin + '/__poll__', { cache: "no-store" });
-                    if (res.ok) {
-                        const ts = await res.text();
-                        if (lastUpdate && ts !== lastUpdate) {
-                            location.reload();
-                        }
-                        lastUpdate = ts;
-                    }
-                } catch (e) { console.log("Tunnel connection lost..."); }
+    let lastUpdate = null;
+    setInterval(async () => {
+        try {
+            // Adding ?t= ensures Cloudflare sees a unique URL every time
+            const res = await fetch('/__poll__?t=' + Date.now(), { 
+                cache: "no-store",
+                headers: { 'Cache-Control': 'no-cache' }
+            });
+            const ts = await res.text();
+            if (lastUpdate && ts !== lastUpdate) {
+                console.log("Update detected! Reloading...");
+                location.reload();
             }
-            setInterval(poll, 2000); 
-        </script>
+            lastUpdate = ts;
+        } catch (e) {
+            console.error("Connection to tunnel interrupted.");
+        }
+    }, 2000);
+</script>
         """
         
         full_html = f"<!DOCTYPE html><html><head>{realtime_script}<style>body{{margin:0;background:#0e1117;color:white;font-family:sans-serif;}}</style></head><body>{page_content}</body></html>"
@@ -153,7 +156,7 @@ class WebApp:
 
     def start(self, port=8080, open_browser=False):
         # Change "localhost" to "0.0.0.0" to allow external tunnel traffic
-        server = HTTPServer(("0.0.0.0", port), ShadowEngine) 
+        server = HTTPServer(("", port), ShadowEngine) 
         server.app_instance = self 
         
         if open_browser: 
