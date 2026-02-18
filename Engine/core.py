@@ -54,54 +54,69 @@ class ShadowEngine(BaseHTTPRequestHandler):
     routes = [] 
 
     def do_GET(self):
-        # 1. Handle Real-time Polling (Tunnel Compatible)
+        # 1. Handle Real-time Polling
         if self.path.startswith('/__poll__'):
+            last_ts = str(self.server.app_instance.db.get_last_update())
+            encoded_ts = bytes(last_ts, "utf-8")
+            
             self.send_response(200)
             self.send_header("Content-type", "text/plain")
+            self.send_header("Content-Length", str(len(encoded_ts)))
             self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
-            self.send_header("Connection", "close")
             self.end_headers()
-            last_ts = self.server.app_instance.db.get_last_update()
-            self.wfile.write(bytes(str(last_ts), "utf-8"))
+            
+            try:
+                self.wfile.write(encoded_ts)
+            except (BrokenPipeError, ConnectionResetError):
+                pass 
             return
 
+        # 2. Prepare Route Content
         parsed_url = urlparse(self.path)
         path = parsed_url.path
         query_params = {k: v[0] for k, v in parse_qs(parsed_url.query).items()}
         func, args = self.find_route(path)
         app_instance = self.server.app_instance
 
-        # 2. Page Response
-        self.send_response(200)
-        self.send_header("Content-type", "text/html; charset=utf-8")
-        self.end_headers()
-
         if func:
-            try: page_content = func(app_instance, query_params, *args)
-            except Exception: page_content = f"<pre style='color:red;'>{traceback.format_exc()}</pre>"
+            try: 
+                page_content = func(app_instance, query_params, *args)
+            except Exception: 
+                page_content = f"<pre style='color:red;'>{traceback.format_exc()}</pre>"
         else:
             page_content = "<h1>404 Not Found</h1>"
 
-        # 3. Tunnel-Ready Script (Uses window.location.origin to find the tunnel URL)
-        realtime_script = """
+        # 3. Build HTML and CALCULATE LENGTH BEFORE SENDING HEADERS
+        realtime_script = f"""
         <script>
             let lastUpdate = null;
-            async function checkUpdates() {
-                try {
+            async function checkUpdates() {{
+                try {{
                     const res = await fetch(window.location.origin + '/__poll__?t=' + Date.now());
-                    if (res.ok) {
+                    if (res.ok) {{
                         const ts = await res.text();
                         if (lastUpdate && ts !== lastUpdate) location.reload();
                         lastUpdate = ts;
-                    }
-                } catch (e) { console.error("Tunnel Disconnected"); }
-            }
+                    }}
+                }} catch (e) {{ console.error("Tunnel Disconnected"); }}
+            }}
             setInterval(checkUpdates, 2000);
         </script>
         """
         
-        full_html = f"<!DOCTYPE html><html><head>{realtime_script}<style>body{{margin:0;background:#0e1117;color:white;font-family:sans-serif;line-height:1.6;}}</style></head><body>{page_content}</body></html>"
-        self.wfile.write(bytes(full_html, "utf-8"))
+        full_html = f"<!DOCTYPE html><html><head>{realtime_script}<style>body{{margin:0;background:#0e1117;color:white;font-family:sans-serif;padding:20px;}}</style></head><body>{page_content}</body></html>"
+        encoded_html = bytes(full_html, "utf-8")
+
+        # 4. Now send headers with the correct length
+        self.send_response(200)
+        self.send_header("Content-type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded_html)))
+        self.end_headers()
+
+        try:
+            self.wfile.write(encoded_html)
+        except (BrokenPipeError, ConnectionResetError):
+            print("Connection closed by Cloudflare.")
 
     def do_POST(self):
         length = int(self.headers.get('content-length', 0))
