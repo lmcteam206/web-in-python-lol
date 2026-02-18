@@ -1,8 +1,6 @@
 import sqlite3
 import os
 import re
-import mimetypes
-import cgi
 import traceback
 import threading
 import webbrowser
@@ -11,7 +9,6 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
 class Database:
-    """A 'Smart Dictionary' style database that handles JSON automatically."""
     def __init__(self, db_name="system_data.db"):
         self.db_name = db_name
         self._init_db()
@@ -28,8 +25,6 @@ class Database:
             conn.commit()
 
     def save(self, key, data):
-        """Save anything (list, dict, string) without worrying about JSON."""
-        # Convert to JSON string automatically
         serialized_data = json.dumps(data)
         with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
             conn.execute(
@@ -39,32 +34,32 @@ class Database:
             conn.commit()
 
     def load(self, key, default=None):
-        """Load data and turn it back into a Python object automatically."""
         with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
             cursor = conn.execute("SELECT value FROM storage WHERE key = ?", (key,))
             row = cursor.fetchone()
             if row:
-                try:
-                    # Convert back from JSON string to Python list/dict
-                    return json.loads(row[0])
-                except:
-                    return row[0]
+                try: return json.loads(row[0])
+                except: return row[0]
             return default
 
     def get_last_update(self):
         with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
             cursor = conn.execute("SELECT MAX(updated_at) FROM storage")
             res = cursor.fetchone()
-            return res[0] if res else "0"
+            return res[0] if res and res[0] else "0"
 
 class ShadowEngine(BaseHTTPRequestHandler):
+    # CRITICAL: Cloudflare requires HTTP/1.1 for Tunnels
+    protocol_version = "HTTP/1.1"
     routes = [] 
 
     def do_GET(self):
+        # 1. Handle Real-time Polling (Tunnel Compatible)
         if self.path.startswith('/__poll__'):
             self.send_response(200)
             self.send_header("Content-type", "text/plain")
             self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+            self.send_header("Connection", "close")
             self.end_headers()
             last_ts = self.server.app_instance.db.get_last_update()
             self.wfile.write(bytes(str(last_ts), "utf-8"))
@@ -76,38 +71,36 @@ class ShadowEngine(BaseHTTPRequestHandler):
         func, args = self.find_route(path)
         app_instance = self.server.app_instance
 
+        # 2. Page Response
         self.send_response(200)
-        self.send_header("Content-type", "text/html")
+        self.send_header("Content-type", "text/html; charset=utf-8")
         self.end_headers()
 
         if func:
-            try:
-                page_content = func(app_instance, query_params, *args)
-            except Exception as e:
-                page_content = f"<div style='color:red;'>{traceback.format_exc()}</div>"
+            try: page_content = func(app_instance, query_params, *args)
+            except Exception: page_content = f"<pre style='color:red;'>{traceback.format_exc()}</pre>"
         else:
             page_content = "<h1>404 Not Found</h1>"
 
+        # 3. Tunnel-Ready Script (Uses window.location.origin to find the tunnel URL)
         realtime_script = """
         <script>
             let lastUpdate = null;
-            setInterval(async () => {
+            async function checkUpdates() {
                 try {
-                    // Force path to absolute to avoid relative path issues in tunnels
                     const res = await fetch(window.location.origin + '/__poll__?t=' + Date.now());
                     if (res.ok) {
                         const ts = await res.text();
-                        if (lastUpdate && ts !== lastUpdate) {
-                            window.location.href = window.location.pathname; // Hard refresh
-                        }
+                        if (lastUpdate && ts !== lastUpdate) location.reload();
                         lastUpdate = ts;
                     }
-                } catch (e) {}
-            }, 2000);
+                } catch (e) { console.error("Tunnel Disconnected"); }
+            }
+            setInterval(checkUpdates, 2000);
         </script>
         """
         
-        full_html = f"<!DOCTYPE html><html><head>{realtime_script}<style>body{{margin:0;background:#0e1117;color:white;font-family:sans-serif;}}</style></head><body>{page_content}</body></html>"
+        full_html = f"<!DOCTYPE html><html><head>{realtime_script}<style>body{{margin:0;background:#0e1117;color:white;font-family:sans-serif;line-height:1.6;}}</style></head><body>{page_content}</body></html>"
         self.wfile.write(bytes(full_html, "utf-8"))
 
     def do_POST(self):
@@ -121,8 +114,9 @@ class ShadowEngine(BaseHTTPRequestHandler):
         if func:
             func(self.server.app_instance, params, *args, is_post=True)
         
+        # 4. FIX: Use explicit redirect to root to avoid Referer issues in Tunnels
         self.send_response(303)
-        self.send_header('Location', '/') 
+        self.send_header('Location', '/')
         self.end_headers()
 
     def find_route(self, path):
@@ -135,13 +129,8 @@ class WebApp:
     def __init__(self, storage_file="work_tracker.db"):
         self.db = Database(storage_file)
 
-    def store(self, key, value):
-        """Easy-to-remember name for saving data."""
-        self.db.save(key, value)
-
-    def fetch(self, key, default=None):
-        """Easy-to-remember name for getting data."""
-        return self.db.load(key, default)
+    def store(self, key, value): self.db.save(key, value)
+    def fetch(self, key, default=None): return self.db.load(key, default)
 
     def page(self, path):
         def wrapper(func):
@@ -149,20 +138,18 @@ class WebApp:
             return func
         return wrapper
 
-    def build_page(self, components):
-        return "".join([c.render() for c in components])
-
-    def start(self, port=8080, open_browser=False):
-        # Change "localhost" to "0.0.0.0" to allow external tunnel traffic
-        server = HTTPServer(("", port), ShadowEngine) 
+    def start(self, port=8080):
+        # 5. FIX: Bind to 0.0.0.0 to accept traffic from the Cloudflare Connector
+        server = HTTPServer(("0.0.0.0", port), ShadowEngine)
         server.app_instance = self 
         
-        if open_browser: 
-            threading.Timer(1, lambda: webbrowser.open(f"http://localhost:{port}")).start()
+        print(f"\n--- ShadowEngine Online ---")
+        print(f"Local: http://localhost:{port}")
+        print(f"Tunnel: Point your cloudflared tunnel to http://127.0.0.1:{port}")
+        print(f"---------------------------\n")
         
-        print(f"ShadowEngine running on port {port} (Cloudflare Tunnel Ready)")
         server.serve_forever()
-
+        
 ######################################################################
 ######################################################################        
 ######################################################################
