@@ -61,8 +61,10 @@ class ShadowEngine(BaseHTTPRequestHandler):
     routes = [] 
 
     def do_GET(self):
-        if self.path == '/__poll__':
+        if self.path.startswith('/__poll__'):
             self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
             self.end_headers()
             last_ts = self.server.app_instance.db.get_last_update()
             self.wfile.write(bytes(str(last_ts), "utf-8"))
@@ -88,25 +90,21 @@ class ShadowEngine(BaseHTTPRequestHandler):
 
         realtime_script = """
         <script>
-    let lastUpdate = null;
-    setInterval(async () => {
-        try {
-            // Adding ?t= ensures Cloudflare sees a unique URL every time
-            const res = await fetch('/__poll__?t=' + Date.now(), { 
-                cache: "no-store",
-                headers: { 'Cache-Control': 'no-cache' }
-            });
-            const ts = await res.text();
-            if (lastUpdate && ts !== lastUpdate) {
-                console.log("Update detected! Reloading...");
-                location.reload();
-            }
-            lastUpdate = ts;
-        } catch (e) {
-            console.error("Connection to tunnel interrupted.");
-        }
-    }, 2000);
-</script>
+            let lastUpdate = null;
+            setInterval(async () => {
+                try {
+                    // Force path to absolute to avoid relative path issues in tunnels
+                    const res = await fetch(window.location.origin + '/__poll__?t=' + Date.now());
+                    if (res.ok) {
+                        const ts = await res.text();
+                        if (lastUpdate && ts !== lastUpdate) {
+                            window.location.href = window.location.pathname; // Hard refresh
+                        }
+                        lastUpdate = ts;
+                    }
+                } catch (e) {}
+            }, 2000);
+        </script>
         """
         
         full_html = f"<!DOCTYPE html><html><head>{realtime_script}<style>body{{margin:0;background:#0e1117;color:white;font-family:sans-serif;}}</style></head><body>{page_content}</body></html>"
@@ -124,7 +122,7 @@ class ShadowEngine(BaseHTTPRequestHandler):
             func(self.server.app_instance, params, *args, is_post=True)
         
         self.send_response(303)
-        self.send_header('Location', self.headers.get('Referer', '/'))
+        self.send_header('Location', '/') 
         self.end_headers()
 
     def find_route(self, path):
