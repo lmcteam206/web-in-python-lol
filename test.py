@@ -1,107 +1,101 @@
-from Engine.core import *
+from Engine.core import * # Assuming the code you provided is in Engine/core.py
 
-app = WebApp("landing_page.db")
-
-# Simple Nav for a Landing Page
-NAV_LINKS = [
-    ("Docs", "#"), 
-    ("Components", "#"), 
-    ("GitHub", "https://github.com")
-]
+app = WebApp(name="ShadowAnalytics")
 
 @app.page("/")
-def landing_page(app, query, is_post=False):
-    return app.build_page([
-        Navbar("/", NAV_LINKS),
-        
-        # --- HERO SECTION ---
-        Container([
-            Spacer("60px"),
-            Text("Build Web Apps in Pure Python.", size="48px", bold=True, style={"text-align": "center"}),
-            Spacer("10px"),
-            Text("The zero-dependency framework for hunters who hate HTML.", 
-                 size="20px", color="#888", style={"text-align": "center"}),
-            Spacer("40px"),
-            Row([
-                # Use spacer flex to center buttons
-                Spacer("0px"), 
-                Button("Get Started →", style={"padding": "15px 40px", "font-size": "18px"}),
-                Button("View on GitHub", primary=False, style={"padding": "15px 40px", "font-size": "18px"}),
-                Spacer("0px"),
-            ], style={"justify-content": "center", "gap": "20px"}),
-            Spacer("80px"),
+def dashboard(instance, params):
+    # 1. Sidebar Links & Mock Data
+    nav_links = [("Overview", "/"), ("Analytics", "#"), ("Logs", "#"), ("Settings", "#")]
+    
+    # 2. Stats Header (Grid of Cards)
+    stats = Grid([
+        Card([
+            Text("Total Users").color("#888").font_size("12px"),
+            Text("12,482").font_size("28px").weight("bold").margin("5px 0"),
+            Badge("↑ 12%", "#22c55e")
         ]),
-
-        # --- FEATURE GRID ---
-        Container([
-            Text("Engine Features", size="14px", bold=True, color="#6366f1", style={"text-align": "center"}),
-            Spacer("10px"),
-            Text("Everything you need, nothing you don't.", size="28px", bold=True, style={"text-align": "center"}),
-            Spacer("40px"),
-            Row([
-                Card([
-                    Text("⚡ Smart Persistence", bold=True),
-                    Spacer("10px"),
-                    Text("Automatic JSON-to-SQLite serialization. No more manual parsing.", color="#888", size="14px")
-                ]),
-                Card([
-                    Text("🛡️ Error Boundaries", bold=True),
-                    Spacer("10px"),
-                    Text("Beautiful tracebacks rendered in-browser. Debug like a pro.", color="#888", size="14px")
-                ]),
-                Card([
-                    Text("🌑 ShadowUI", bold=True),
-                    Spacer("10px"),
-                    Text("Pre-styled dark mode components ready for composition.", color="#888", size="14px")
-                ])
-            ]),
-            Spacer("20px"),
-            Row([
-                Card([
-                    Text("🔗 Regex Routing", bold=True),
-                    Spacer("10px"),
-                    Text("Dynamic URL slugs with zero configuration.", color="#888", size="14px")
-                ]),
-                Card([
-                    Text("📦 Zero Deps", bold=True),
-                    Spacer("10px"),
-                    Text("Built 100% on the Python Standard Library. No bloat.", color="#888", size="14px")
-                ]),
-                Card([
-                    # Feature placeholder
-                    Text("🚀 Live Reload", bold=True),
-                    Spacer("10px"),
-                    Text("Automatic browser refresh when the database updates.", color="#888", size="14px")
-                ])
-            ])
+        Card([
+            Text("Active Sessions").color("#888").font_size("12px"),
+            Text("1,043").font_size("28px").weight("bold").margin("5px 0"),
+            Badge("Stable", "#6366f1")
         ]),
+        Card([
+            Text("Server Load").color("#888").font_size("12px"),
+            Text("42%").font_size("28px").weight("bold").margin("5px 0"),
+            Badge("Healthy", "#22c55e")
+        ]),
+        Card([
+            Text("API Latency").color("#888").font_size("12px"),
+            Text("84ms").font_size("28px").weight("bold").margin("5px 0"),
+            Badge("Critical", "#ef4444")
+        ])
+    ], columns=4)
 
-        # --- CODE PREVIEW SECTION ---
-        Container([
-            Spacer("80px"),
+    # 3. Main Content Area (Split Grid)
+    content = Grid([
+        # Left Side: Project Management
+        Column([
+            Text("System Projects").font_size("20px").weight("bold").margin("0 0 10px 0"),
             Card([
                 Row([
-                    Text("app.py", color="#666", size="12px"),
-                    Text("● ● ●", color="#444", size="12px")
-                ], style={"justify-content": "space-between"}),
-                Spacer("15px"),
-                Text("from Engine.core import WebApp, Text", color="#4ade80"),
-                Text("app = WebApp()", color="#fff"),
-                Text("@app.page('/')", color="#facc15"),
-                Text("def hello(app, params):", color="#fff"),
-                Text("    return Text('Hello World')", color="#6366f1", style={"margin-left": "20px"}),
-                Spacer("15px"),
-                Text("app.start()", color="#fff"),
-            ], style={"background": "#000", "font-family": "monospace", "border": "1px solid #333"}),
-            Spacer("100px"),
-            
-            # --- FOOTER ---
-            Row([
-                Text("© 2024 web-in-python-lol", color="#444", size="12px"),
-                Text("Built by Hunters", color="#444", size="12px")
-            ], style={"justify-content": "space-between", "border-top": "1px solid #222", "padding-top": "20px"})
+                    Column([
+                        Text("Cloud Migration").weight("bold"),
+                        Text("Infrastructure Team").color("#666").font_size("13px")
+                    ]),
+                    Badge("In Progress", "#f59e0b")
+                ]).padding("10px 0").border_bottom("1px solid #333"),
+                Row([
+                    Column([
+                        Text("Auth Service v2").weight("bold"),
+                        Text("Security Team").color("#666").font_size("13px")
+                    ]),
+                    Badge("Completed", "#22c55e")
+                ]).padding("10px 0")
+            ])
+        ]),
+        
+        # Right Side: Quick Actions Form
+        Column([
+            Text("Broadcast Message").font_size("20px").weight("bold").margin("0 0 10px 0"),
+            Card([
+                Form("/send-alert", [
+                    TextInput("Announcement Title", "title", placeholder="System Maintenance..."),
+                    TextInput("Message Body", "msg", placeholder="Describe the update..."),
+                    Button("Dispatch to All Nodes").width("100%")
+                ])
+            ])
         ])
-    ])
+    ], columns=2)
+
+    # 4. Final Layout Construction
+    return Container([
+        Navbar("SHADOW_OS", nav_links).margin("-40px -40px 40px -40px"), # Full width adjustment
+        
+        Row([
+            Column([
+                Text("Operational Dashboard").font_size("32px").weight("800"),
+                Text("Real-time monitoring and system dispatch center.").color("#888")
+            ]),
+            Button("Download PDF", primary=False).radius("20px").padding("8px 25px")
+        ]).margin("0 0 30px 0").flex("justify-content: space-between"),
+        
+        stats,
+        Spacer(h="30px"),
+        content
+    ]).render()
+
+# --- BACKEND HANDLERS ---
+
+@app.page("/send-alert")
+def handle_alert(instance, params, is_post=False):
+    if is_post:
+        # Save alert to DB
+        title = params.get("title", "No Title")
+        instance.store("latest_alert", title)
+        print(f"Broadcasting: {title}")
+    return "Redirecting..."
 
 if __name__ == "__main__":
+    # Open browser automatically
+    webbrowser.open("http://localhost:8080")
     app.start(port=8080)

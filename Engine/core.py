@@ -1,233 +1,294 @@
-import sqlite3
-import os
-import re
-import mimetypes
-import cgi
-import traceback
-import threading
-import webbrowser
-import json
+import sqlite3, re, json, traceback, threading, webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
+# --- DATABASE LAYER ---
 class Database:
-    """A 'Smart Dictionary' style database that handles JSON automatically."""
     def __init__(self, db_name="system_data.db"):
         self.db_name = db_name
+        self.lock = threading.Lock()
         self._init_db()
 
     def _init_db(self):
-        with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS storage (
-                    key TEXT PRIMARY KEY,
-                    value TEXT,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            conn.commit()
+        with self.lock:
+            with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
+                conn.execute("CREATE TABLE IF NOT EXISTS storage (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
 
     def save(self, key, data):
-        """Save anything (list, dict, string) without worrying about JSON."""
-        # Convert to JSON string automatically
-        serialized_data = json.dumps(data)
-        with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO storage (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)", 
-                (key, serialized_data)
-            )
-            conn.commit()
+        with self.lock:
+            with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
+                conn.execute("INSERT OR REPLACE INTO storage (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)", (key, json.dumps(data)))
 
     def load(self, key, default=None):
-        """Load data and turn it back into a Python object automatically."""
-        with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
-            cursor = conn.execute("SELECT value FROM storage WHERE key = ?", (key,))
-            row = cursor.fetchone()
-            if row:
-                try:
-                    # Convert back from JSON string to Python list/dict
-                    return json.loads(row[0])
-                except:
-                    return row[0]
-            return default
+        with self.lock:
+            with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
+                row = conn.execute("SELECT value FROM storage WHERE key = ?", (key,)).fetchone()
+                return json.loads(row[0]) if row else default
 
     def get_last_update(self):
-        with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
-            cursor = conn.execute("SELECT MAX(updated_at) FROM storage")
-            res = cursor.fetchone()
-            return res[0] if res else "0"
+        with self.lock:
+            with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
+                res = conn.execute("SELECT MAX(updated_at) FROM storage").fetchone()
+                return res[0] if res and res[0] else "0"
 
+# --- CORE ENGINE ---
 class ShadowEngine(BaseHTTPRequestHandler):
-    routes = [] 
-
     def do_GET(self):
         if self.path == '/__poll__':
-            self.send_response(200)
-            self.end_headers()
-            last_ts = self.server.app_instance.db.get_last_update()
-            self.wfile.write(bytes(str(last_ts), "utf-8"))
+            self.send_response(200); self.end_headers()
+            self.wfile.write(str(self.server.app_instance.db.get_last_update()).encode())
             return
-
-        parsed_url = urlparse(self.path)
-        path = parsed_url.path
-        query_params = {k: v[0] for k, v in parse_qs(parsed_url.query).items()}
-        func, args = self.find_route(path)
-        app_instance = self.server.app_instance
-
-        self.send_response(200)
-        self.send_header("Content-type", "text/html")
-        self.end_headers()
-
-        if func:
-            try:
-                page_content = func(app_instance, query_params, *args)
-            except Exception as e:
-                page_content = f"<div style='color:red;'>{traceback.format_exc()}</div>"
-        else:
-            page_content = "<h1>404 Not Found</h1>"
-
-        realtime_script = """
-        <script>
-            let lastUpdate = null;
-            setInterval(async () => {
-                try {
-                    const res = await fetch('/__poll__');
-                    const ts = await res.text();
-                    if (lastUpdate && ts !== lastUpdate) location.reload();
-                    lastUpdate = ts;
-                } catch (e) {}
-            }, 1500);
-        </script>
-        """
-        
-        full_html = f"<!DOCTYPE html><html><head>{realtime_script}<style>body{{margin:0;background:#0e1117;color:white;font-family:sans-serif;}}</style></head><body>{page_content}</body></html>"
-        self.wfile.write(bytes(full_html, "utf-8"))
+        self.handle_request()
 
     def do_POST(self):
-        length = int(self.headers.get('content-length', 0))
-        body = self.rfile.read(length).decode('utf-8')
-        params = {k: v[0] for k, v in parse_qs(body).items()}
-        
-        path = urlparse(self.path).path
-        func, args = self.find_route(path)
-        
-        if func:
-            func(self.server.app_instance, params, *args, is_post=True)
-        
-        self.send_response(303)
-        self.send_header('Location', self.headers.get('Referer', '/'))
-        self.end_headers()
+        length = int(self.headers.get('Content-Length', 0))
+        params = {k: v[0] for k, v in parse_qs(self.rfile.read(length).decode()).items()}
+        func, args = self.find_route(urlparse(self.path).path)
+        if func: func(self.server.app_instance, params, *args, is_post=True)
+        self.send_response(303); self.send_header('Location', self.headers.get('Referer', '/')); self.end_headers()
+
+    def handle_request(self):
+        func, args = self.find_route(urlparse(self.path).path)
+        params = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+        self.send_response(200); self.send_header("Content-type", "text/html"); self.end_headers()
+        try:
+            content = func(self.server.app_instance, params, *args) if func else "<h1>404</h1>"
+        except:
+            content = f"<pre style='color:red;'>{traceback.format_exc()}</pre>"
+        self.wfile.write(self.server.app_instance._wrap(content).encode())
 
     def find_route(self, path):
-        for pattern, _, func in self.routes:
+        for pattern, func in self.server.app_instance.routes:
             match = pattern.match(path)
             if match: return func, match.groups()
         return None, []
 
 class WebApp:
-    def __init__(self, storage_file="work_tracker.db"):
-        self.db = Database(storage_file)
-
-    def store(self, key, value):
-        """Easy-to-remember name for saving data."""
-        self.db.save(key, value)
-
-    def fetch(self, key, default=None):
-        """Easy-to-remember name for getting data."""
-        return self.db.load(key, default)
-
+    def __init__(self, name="ShadowUI"):
+        self.name = name
+        self.db = Database()
+        self.routes = []
+    
+    def store(self, k, v): self.db.save(k, v)
+    def fetch(self, k, d=None): return self.db.load(k, d)
     def page(self, path):
-        def wrapper(func):
-            ShadowEngine.routes.append((re.compile(f"^{path}$"), path, func))
-            return func
-        return wrapper
+        def d(f): self.routes.append((re.compile(f"^{path}$"), f)); return f
+        return d
 
-    def build_page(self, components):
-        return "".join([c.render() for c in components])
+    def _wrap(self, content):
+        return f"<html><head><style>body{{margin:0;background:#0e1117;color:#fff;font-family:sans-serif;}} *{{box-sizing:border-box;}}</style><script>let last=null;setInterval(async()=>{{let r=await fetch('/__poll__');let t=await r.text();if(last&&t!==last)location.reload();last=t;}},1500);</script></head><body>{content}</body></html>"
 
-    def start(self, port=8080, open_browser=False):
-        server = HTTPServer(("localhost", port), ShadowEngine)
-        server.app_instance = self 
-        if open_browser: threading.Timer(1, lambda: webbrowser.open(f"http://localhost:{port}")).start()
-        print(f"ShadowEngine running on port {port}")
-        server.serve_forever()
-
-######################################################################
-######################################################################        
-######################################################################
-####################### COMPONENTS ###################################
-######################################################################
-######################################################################
-######################################################################
+    def start(self, port=8080):
+        srv = HTTPServer(("0.0.0.0", port), ShadowEngine)
+        srv.app_instance = self
+        print(f"Running on port {port}"); srv.serve_forever()
 
 class Component:
-    def __init__(self, style=None): self.user_style = style or {}
-    def get_style(self): return "; ".join([f"{k}: {v}" for k, v in self.user_style.items()])
+    def __init__(self, style=None):
+        # Initialize with standard dictionary or empty
+        self._styles = style or {}
 
-class Text(Component):
-    def __init__(self, content, bold=False, size="16px", color="#fff", style=None):
-        super().__init__(style)
-        self.content, self.bold, self.size, self.color = content, bold, size, color
-    def render(self): return f'<div style="color:{self.color}; font-size:{self.size}; font-weight:{"bold" if self.bold else "normal"}; {self.get_style()}">{self.content}</div>'
+    def css(self):
+        """Converts the internal style dict to a CSS string."""
+        return "; ".join([f"{k.replace('_', '-')}:{v}" for k, v in self._styles.items()])
+    def set(self, prop, val):
+        """Set any CSS property dynamically."""
+        self._styles[prop] = val
+        return self
+    # --- STYLE BUILDER METHODS ---
+    # These return 'self' so you can chain them: .padding("10px").margin("5px")
+    def padding(self, val): self._styles['padding'] = val; return self
+    def margin(self, val): self._styles['margin'] = val; return self
+    def bg(self, val): self._styles['background'] = val; return self
+    def color(self, val): self._styles['color'] = val; return self
+    def width(self, val): self._styles['width'] = val; return self
+    def height(self, val): self._styles['height'] = val; return self
+    def radius(self, val): self._styles['border-radius'] = val; return self
+    def border(self, val): self._styles['border'] = val; return self
+    def font_size(self, val): self._styles['font-size'] = val; return self
+    def weight(self, val): self._styles['font-weight'] = val; return self
+    def align(self, val): self._styles['text-align'] = val; return self
+    def shadow(self, val): self._styles['box-shadow'] = val; return self
+    def flex(self, val): self._styles['flex'] = val; return self
+    def hide(self): self._styles['display'] = 'none'; return self
+    def border_bottom(self, val): self._styles['border-bottom'] = val; return self
+    def border_top(self, val): self._styles['border-top'] = val; return self
+    def opacity(self, val): self._styles['opacity'] = val; return self
+    def cursor(self, val): self._styles['cursor'] = val; return self
+    def display(self, val): self._styles['display'] = val; return self
 
-class TextInput(Component):
-    def __init__(self, label, name, placeholder="", type="text", value=None):
+    
+    def render(self): return ""
+
+class Group(Component):
+    def __init__(self, items):
         super().__init__()
-        self.label, self.name, self.placeholder, self.type, self.value = label, name, placeholder, type, value
-    def render(self):
-        val_attr = f'value="{self.value}"' if self.value is not None else ""
-        if self.type == "hidden":
-            return f'<input type="hidden" name="{self.name}" {val_attr}>'
-        return f'<div style="margin-bottom:15px;"><label style="display:block;margin-bottom:5px;font-size:12px;color:#888;">{self.label}</label><input type="{self.type}" name="{self.name}" placeholder="{self.placeholder}" {val_attr} style="width:100%;padding:10px;background:#000;border:1px solid #333;color:#fff;border-radius:5px;"></div>'
-
-class Card(Component):
-    def __init__(self, items, style=None):
-        super().__init__(style)
         self.items = items
     def render(self):
-        content = "".join([i.render() for i in self.items])
-        return f'<div style="background:rgba(255,255,255,0.05); padding:20px; border-radius:12px; border:1px solid #333; {self.get_style()}">{content}</div>'
-
-class Button(Component):
-    def __init__(self, text, primary=True, style=None):
-        super().__init__(style)
-        self.text, self.primary = text, primary
-    def render(self):
-        bg = "#6366f1" if self.primary else "#444"
-        return f'<button type="submit" style="background:{bg}; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold; {self.get_style()}">{self.text}</button>'
-
-class Form(Component):
-    def __init__(self, action, items, style=None):
-        super().__init__(style)
-        self.action, self.items = action, items
-    def render(self):
-        content = "".join([i.render() for i in self.items])
-        return f'<form action="{self.action}" method="POST" style="{self.get_style()}">{content}</form>'
-
-class Row(Component):
-    def __init__(self, items, style=None):
-        super().__init__(style)
-        self.items = items
-    def render(self):
-        content = "".join([f'<div style="flex:1;">{i.render()}</div>' for i in self.items])
-        return f'<div style="display:flex; gap:20px; {self.get_style()}">{content}</div>'
+        return "".join([i.render() if hasattr(i, 'render') else str(i) for i in self.items])
 
 class Container(Component):
-    def __init__(self, items, style=None):
-        super().__init__(style)
+    def __init__(self, items):
+        super().__init__()
         self.items = items
     def render(self):
-        content = "".join([i.render() for i in self.items])
-        return f'<div style="max-width:1000px; margin:0 auto; padding:40px; {self.get_style()}">{content}</div>'
+        # Default container styles can still be overridden by chaining
+        style = {"max-width":"1000px", "margin":"0 auto", "padding":"40px"}
+        style.update(self._styles)
+        self._styles = style
+        return f'<div style="{self.css()}">{Group(self.items).render()}</div>'
+
+class Card(Component):
+    def __init__(self, items):
+        super().__init__()
+        self.items = items
+    def render(self):
+        style = {"background":"#1a1d23", "padding":"20px", "border-radius":"12px", "border":"1px solid #333"}
+        style.update(self._styles)
+        self._styles = style
+        return f'<div style="{self.css()}">{Group(self.items).render()}</div>'
+
+class Text(Component):
+    def __init__(self, text):
+        super().__init__()
+        self.text = text
+    def render(self):
+        return f'<div style="{self.css()}">{self.text}</div>'
+
+class Button(Component):
+    def __init__(self, text, primary=True):
+        super().__init__()
+        self.text, self.p = text, primary
+    def render(self):
+        bg = "#6366f1" if self.p else "#333"
+        base = {"background":bg, "color":"#fff", "border":"none", "padding":"10px 20px", "border-radius":"8px", "cursor":"pointer", "font-weight":"bold"}
+        base.update(self._styles)
+        self._styles = base
+        return f'<button type="submit" style="{self.css()}">{self.text}</button>'
+
+class Row(Component):
+    def __init__(self, items, gap="20px"):
+        super().__init__()
+        self.items, self.gap = items, gap
+    def render(self):
+        base = {"display":"flex", "flex-direction":"row", "gap":self.gap, "align-items":"center"}
+        base.update(self._styles)
+        self._styles = base
+        return f'<div style="{self.css()}">{Group(self.items).render()}</div>'
+class TextInput(Component):
+    def __init__(self, label, name, placeholder="", type="text", value=""):
+        super().__init__()
+        self.label, self.name, self.ph, self.type, self.val = label, name, placeholder, type, value
+
+    def render(self):
+        base = {"width": "100%", "padding": "12px", "background": "#000", "border": "1px solid #333", 
+                "color": "#fff", "border-radius": "8px", "outline": "none", "margin-top": "5px"}
+        base.update(self._styles)
+        self._styles = base
+        return f'''
+        <div style="margin-bottom:15px; width:100%;">
+            <label style="color:#888; font-size:12px; font-weight:bold;">{self.label}</label>
+            <input type="{self.type}" name="{self.name}" placeholder="{self.ph}" value="{self.val}" style="{self.css()}">
+        </div>'''
+
+class Form(Component):
+    def __init__(self, action, items, method="POST"):
+        super().__init__()
+        self.action, self.items, self.method = action, items, method
+    def render(self):
+        # Forms usually just need standard padding or margins
+        return f'<form action="{self.action}" method="{self.method}" style="{self.css()}">{Group(self.items).render()}</form>'    
+
+class Column(Component):
+    def __init__(self, items, gap="10px"):
+        super().__init__()
+        self.items, self.gap = items, gap
+    def render(self):
+        base = {"display": "flex", "flex-direction": "column", "gap": self.gap}
+        base.update(self._styles)
+        self._styles = base
+        return f'<div style="{self.css()}">{Group(self.items).render()}</div>'
+
+class Grid(Component):
+    def __init__(self, items, columns=3, gap="20px"):
+        super().__init__()
+        self.items, self.cols, self.gap = items, columns, gap
+    def render(self):
+        base = {"display": "grid", "grid-template-columns": f"repeat({self.cols}, 1fr)", "gap": self.gap}
+        base.update(self._styles)
+        self._styles = base
+        return f'<div style="{self.css()}">{Group(self.items).render()}</div>'
+
 
 class Navbar(Component):
-    def __init__(self, active, links):
+    def __init__(self, brand_name, links):
+        """links: list of tuples [("Home", "/"), ("Settings", "/settings")]"""
         super().__init__()
-        self.active, self.links = active, links
+        self.brand, self.links = brand_name, links
     def render(self):
-        btns = "".join([f'<a href="{u}" style="color:{"#fff" if self.active==u else "#666"}; text-decoration:none; font-weight:bold; font-size:14px; padding: 10px;">{n}</a>' for n, u in self.links])
-        return f'<nav style="padding:20px 40px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center;"><b>SHADOW<span style="color:#6366f1">UI</span></b><div style="display:flex; gap:10px;">{btns}</div></nav>'
+        base = {"padding": "15px 40px", "background": "#000", "border-bottom": "1px solid #333", 
+                "display": "flex", "justify-content": "space-between", "align-items": "center", "position":"sticky", "top":"0"}
+        base.update(self._styles)
+        self._styles = base
+        btns = "".join([f'<a href="{u}" style="color:#888; margin-left:20px; text-decoration:none; font-size:14px; font-weight:500;">{n}</a>' for n, u in self.links])
+        return f'''
+        <nav style="{self.css()}">
+            <div style="font-weight:bold; font-size:20px; color:#6366f1;">{self.brand}</div>
+            <div>{btns}</div>
+        </nav>'''
+
+class Image(Component):
+    def __init__(self, src, alt="image"):
+        super().__init__()
+        self.src, self.alt = src, alt
+    def render(self):
+        base = {"max-width": "100%", "height": "auto", "border-radius": "8px"}
+        base.update(self._styles)
+        self._styles = base
+        return f'<img src="{self.src}" alt="{self.alt}" style="{self.css()}">'
+
+
+class Badge(Component):
+    def __init__(self, text, color="#6366f1"):
+        super().__init__()
+        self.text, self.color = text, color
+    def render(self):
+        base = {"background": f"{self.color}22", "color": self.color, "padding": "4px 10px", 
+                "border-radius": "6px", "font-size": "11px", "font-weight": "bold", "display": "inline-block"}
+        base.update(self._styles)
+        self._styles = base
+        return f'<span style="{self.css()}">{self.text}</span>'
 
 class Spacer(Component):
-    def __init__(self, size): super().__init__(); self.size = size
-    def render(self): return f'<div style="height:{self.size};"></div>'
+    def __init__(self, h="20px", w="20px"):
+        super().__init__()
+        self.h, self.w = h, w
+    def render(self):
+        return f'<div style="height:{self.h}; width:{self.w};"></div>'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
