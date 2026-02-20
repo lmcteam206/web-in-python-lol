@@ -1,25 +1,18 @@
-# --- Python Bytecode ---
+# Database
+*.db
+system_data.db
+
+# Python 
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
 
-# --- Local Data & Databases ---
-# We ignore the save file so every user starts fresh
-save.json
+# Distribution / Build
+dist/
+build/
+*.egg-info/
 
-# --- Uploads & Static Media ---
-# Ignore images uploaded during testing
-*.jpg
-*.jpeg
-*.png
-*.gif
-*.webp
-
-# --- Environment & OS ---
-.env
-.venv
-venv/
+# Environments
+.venv/
 env/
-.DS_Store
-Thumbs.db
+venv/
