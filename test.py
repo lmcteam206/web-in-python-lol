@@ -68,21 +68,26 @@ def dashboard(instance, params):
     ], columns=2)
 
     # 4. Final Layout Construction
-    return Container([
-        Navbar("SHADOW_OS", nav_links).margin("-40px -40px 40px -40px"), # Full width adjustment
+    return Column([
+        # Navbar is now at the root, so it takes 100% width
+        Navbar("ShadowAnalytics", nav_links), 
         
-        Row([
-            Column([
-                Text("Operational Dashboard").font_size("32px").weight("800"),
-                Text("Real-time monitoring and system dispatch center.").color("#888")
-            ]),
-            Button("Download PDF", primary=False).radius("20px").padding("8px 25px")
-        ]).margin("0 0 30px 0").flex("justify-content: space-between"),
-        
-        stats,
-        Spacer(h="30px"),
-        content
-    ]).render()
+        # Now we put the restricted-width content inside a Container
+        Container([
+            Spacer(h="20px"),
+            Row([
+                Column([
+                    Text("Operational Dashboard").font_size("32px").weight("800"),
+                    Text("Real-time monitoring and system dispatch center.").color("#888")
+                ]),
+                Button("Download PDF", primary=False).radius("20px").padding("8px 25px")
+            ]).margin("0 0 30px 0").justify_content("space-between"),
+            
+            stats,
+            Spacer(h="30px"),
+            content
+        ])
+    ]).gap("0").render() # Set gap to 0 so Navbar touches the top
 
 # --- BACKEND HANDLERS ---
 

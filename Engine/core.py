@@ -76,48 +76,167 @@ class WebApp:
         return d
 
     def _wrap(self, content):
-        return f"<html><head><style>body{{margin:0;background:#0e1117;color:#fff;font-family:sans-serif;}} *{{box-sizing:border-box;}}</style><script>let last=null;setInterval(async()=>{{let r=await fetch('/__poll__');let t=await r.text();if(last&&t!==last)location.reload();last=t;}},1500);</script></head><body>{content}</body></html>"
+        return f"""
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <script src="https://unpkg.com/lucide@latest"></script>
+            <style>
+                body {{ margin:0; background:#0e1117; color:#fff; font-family:sans-serif; overflow-x: hidden; }}
+                * {{ box-sizing:border-box; }}
+                
+                .nav-links {{ display: flex; align-items: center; }}
+                .menu-toggle {{ 
+                    display: none; cursor: pointer; color: #6366f1; 
+                    background: none; border: none; padding: 5px;
+                }}
+                /* Fix icon centering */
+                .menu-toggle i {{ display: block; }}
+
+                @media (max-width: 768px) {{
+                    .nav-links {{ 
+                        display: none; flex-direction: column; width: 100%; 
+                        position: absolute; top: 60px; left: 0; 
+                        background: #000; padding: 20px; border-bottom: 1px solid #333;
+                    }}
+                    .nav-links.active {{ display: flex; }}
+                    .nav-links a {{ margin: 10px 0 !important; width: 100%; text-align: center; }}
+                    .menu-toggle {{ display: block; }}
+                }}
+                div[style*="max-width:1000px"] {{ max-width: 100% !important; padding: 20px !important; }}
+            </style>
+            <script>
+                function toggleMenu() {{
+                    const nav = document.getElementById('mobile-nav');
+                    nav.classList.toggle('active');
+                }}
+                // Initialize icons after page load
+                window.onload = () => lucide.createIcons();
+                
+                let last=null;
+                setInterval(async()=>{{
+                    let r=await fetch('/__poll__');
+                    let t=await r.text();
+                    if(last&&t!==last)location.reload();
+                    last=t;
+                }},1500);
+            </script>
+        </head>
+        <body>{content}</body>
+        </html>"""
 
     def start(self, port=8080):
         srv = HTTPServer(("0.0.0.0", port), ShadowEngine)
         srv.app_instance = self
         print(f"Running on port {port}"); srv.serve_forever()
 
+
+   
 class Component:
     def __init__(self, style=None):
-        # Initialize with standard dictionary or empty
         self._styles = style or {}
 
     def css(self):
-        """Converts the internal style dict to a CSS string."""
         return "; ".join([f"{k.replace('_', '-')}:{v}" for k, v in self._styles.items()])
-    def set(self, prop, val):
-        """Set any CSS property dynamically."""
+
+    # --- HELPER ---
+    def set_style(self, prop, val):
         self._styles[prop] = val
         return self
-    # --- STYLE BUILDER METHODS ---
-    # These return 'self' so you can chain them: .padding("10px").margin("5px")
-    def padding(self, val): self._styles['padding'] = val; return self
-    def margin(self, val): self._styles['margin'] = val; return self
-    def bg(self, val): self._styles['background'] = val; return self
-    def color(self, val): self._styles['color'] = val; return self
-    def width(self, val): self._styles['width'] = val; return self
-    def height(self, val): self._styles['height'] = val; return self
-    def radius(self, val): self._styles['border-radius'] = val; return self
-    def border(self, val): self._styles['border'] = val; return self
-    def font_size(self, val): self._styles['font-size'] = val; return self
-    def weight(self, val): self._styles['font-weight'] = val; return self
-    def align(self, val): self._styles['text-align'] = val; return self
-    def shadow(self, val): self._styles['box-shadow'] = val; return self
-    def flex(self, val): self._styles['flex'] = val; return self
-    def hide(self): self._styles['display'] = 'none'; return self
-    def border_bottom(self, val): self._styles['border-bottom'] = val; return self
-    def border_top(self, val): self._styles['border-top'] = val; return self
-    def opacity(self, val): self._styles['opacity'] = val; return self
-    def cursor(self, val): self._styles['cursor'] = val; return self
-    def display(self, val): self._styles['display'] = val; return self
+    def on_click(self, js_code):
+        return self.set_style("onclick", js_code)
 
+    # --- 1. LAYOUT & FLEXBOX (The most used) ---
+    def display(self, v): return self.set_style('display', v)
+    def flex(self, v): return self.set_style('flex', v)
+    def flex_direction(self, v): return self.set_style('flex-direction', v)
+    def justify_content(self, v): return self.set_style('justify-content', v)
+    def align_items(self, v): return self.set_style('align-items', v)
+    def gap(self, v): return self.set_style('gap', v)
+    def flex_wrap(self, v): return self.set_style('flex-wrap', v)
+    def flex_grow(self, v): return self.set_style('flex-grow', v)
+    def order(self, v): return self.set_style('order', v)
+
+    # --- 2. SPACING ---
+    def padding(self, v): return self.set_style('padding', v)
+    def p_top(self, v): return self.set_style('padding-top', v)
+    def p_bottom(self, v): return self.set_style('padding-bottom', v)
+    def p_left(self, v): return self.set_style('padding-left', v)
+    def p_right(self, v): return self.set_style('padding-right', v)
+    def margin(self, v): return self.set_style('margin', v)
+    def m_top(self, v): return self.set_style('margin-top', v)
+    def m_bottom(self, v): return self.set_style('margin-bottom', v)
+    def m_left(self, v): return self.set_style('margin-left', v)
+    def m_right(self, v): return self.set_style('margin-right', v)
+
+    # --- 3. SIZING ---
+    def width(self, v): return self.set_style('width', v)
+    def min_width(self, v): return self.set_style('min-width', v)
+    def max_width(self, v): return self.set_style('max-width', v)
+    def height(self, v): return self.set_style('height', v)
+    def min_height(self, v): return self.set_style('min-height', v)
+    def max_height(self, v): return self.set_style('max-height', v)
+
+    # --- 4. COLOR & BACKGROUND ---
+    def bg(self, v): return self.set_style('background', v)
+    def bg_color(self, v): return self.set_style('background-color', v)
+    def bg_image(self, v): return self.set_style('background-image', v)
+    def bg_size(self, v): return self.set_style('background-size', v)
+    def color(self, v): return self.set_style('color', v)
+    def opacity(self, v): return self.set_style('opacity', v)
+
+    # --- 5. BORDERS & RADIUS ---
+    def border(self, v): return self.set_style('border', v)
+    def border_top(self, v): return self.set_style('border-top', v)
+    def border_bottom(self, v): return self.set_style('border-bottom', v)
+    def border_left(self, v): return self.set_style('border-left', v)
+    def border_right(self, v): return self.set_style('border-right', v)
+    def border_color(self, v): return self.set_style('border-color', v)
+    def border_style(self, v): return self.set_style('border-style', v)
+    def radius(self, v): return self.set_style('border-radius', v)
+    def r_top_left(self, v): return self.set_style('border-top-left-radius', v)
+    def r_top_right(self, v): return self.set_style('border-top-right-radius', v)
+    def outline(self, v): return self.set_style('outline', v)
+
+    # --- 6. TYPOGRAPHY ---
+    def font_size(self, v): return self.set_style('font-size', v)
+    def weight(self, v): return self.set_style('font-weight', v)
+    def font_family(self, v): return self.set_style('font-family', v)
+    def align(self, v): return self.set_style('text-align', v)
+    def decoration(self, v): return self.set_style('text-decoration', v)
+    def transform(self, v): return self.set_style('text-transform', v)
+    def line_height(self, v): return self.set_style('line-height', v)
+    def letter_spacing(self, v): return self.set_style('letter-spacing', v)
+    def white_space(self, v): return self.set_style('white-space', v)
+
+    # --- 7. POSITIONING ---
+    def position(self, v): return self.set_style('position', v)
+    def top(self, v): return self.set_style('top', v)
+    def bottom(self, v): return self.set_style('bottom', v)
+    def left(self, v): return self.set_style('left', v)
+    def right(self, v): return self.set_style('right', v)
+    def z_index(self, v): return self.set_style('z-index', v)
+    def overflow(self, v): return self.set_style('overflow', v)
+
+    # --- 8. EFFECTS & TRANSITIONS ---
+    def shadow(self, v): return self.set_style('box-shadow', v)
+    def transition(self, v): return self.set_style('transition', v)
+    def cursor(self, v): return self.set_style('cursor', v)
+    def filter(self, v): return self.set_style('filter', v)
+    def blur(self, v): return self.set_style('backdrop-filter', f'blur({v})')
+    def transform_effect(self, v): return self.set_style('transform', v)
+
+    # --- 9. GRID SPECIFIC ---
+    def grid_cols(self, v): return self.set_style('grid-template-columns', v)
+    def grid_rows(self, v): return self.set_style('grid-template-rows', v)
+    def grid_area(self, v): return self.set_style('grid-area', v)
     
+    # --- 10. UTILITIES ---
+    def hide(self): return self.set_style('display', 'none')
+    def show(self): return self.set_style('display', 'block')
+    def pointer(self): return self.set_style('cursor', 'pointer')
+
+
     def render(self): return ""
 
 class Group(Component):
@@ -151,30 +270,40 @@ class Card(Component):
 class Text(Component):
     def __init__(self, text):
         super().__init__()
-        self.text = text
+        self._content = text # Changed from self.text to avoid killing .text() method
     def render(self):
-        return f'<div style="{self.css()}">{self.text}</div>'
+        return f'<div style="{self.css()}">{self._content}</div>'
 
 class Button(Component):
     def __init__(self, text, primary=True):
         super().__init__()
         self.text, self.p = text, primary
+        
     def render(self):
         bg = "#6366f1" if self.p else "#333"
         base = {"background":bg, "color":"#fff", "border":"none", "padding":"10px 20px", "border-radius":"8px", "cursor":"pointer", "font-weight":"bold"}
         base.update(self._styles)
-        self._styles = base
-        return f'<button type="submit" style="{self.css()}">{self.text}</button>'
+        
+        # --- NEW LOGIC: Separate JS Events from CSS ---
+        js_events = " ".join([f'{k}="{v}"' for k, v in base.items() if k.startswith("on")])
+        css_only = "; ".join([f"{k.replace('_', '-')}:{v}" for k, v in base.items() if not k.startswith("on")])
+        
+        return f'<button {js_events} style="{css_only}">{self.text}</button>'
 
 class Row(Component):
     def __init__(self, items, gap="20px"):
         super().__init__()
-        self.items, self.gap = items, gap
+        self.items = items
+        self._internal_gap = gap
+
     def render(self):
-        base = {"display":"flex", "flex-direction":"row", "gap":self.gap, "align-items":"center"}
+        g = self._styles.get('gap', self._internal_gap)
+        # Added flex-wrap: wrap
+        base = {"display": "flex", "flex-direction": "row", "flex-wrap": "wrap", "gap": g, "align-items": "center"}
         base.update(self._styles)
         self._styles = base
         return f'<div style="{self.css()}">{Group(self.items).render()}</div>'
+    
 class TextInput(Component):
     def __init__(self, label, name, placeholder="", type="text", value=""):
         super().__init__()
@@ -202,19 +331,29 @@ class Form(Component):
 class Column(Component):
     def __init__(self, items, gap="10px"):
         super().__init__()
-        self.items, self.gap = items, gap
+        self.items = items
+        self._internal_gap = gap # Changed from self.gap
+
     def render(self):
-        base = {"display": "flex", "flex-direction": "column", "gap": self.gap}
+        # Allow the .gap() method to override the default constructor gap
+        g = self._styles.get('gap', self._internal_gap)
+        base = {"display": "flex", "flex-direction": "column", "gap": g}
         base.update(self._styles)
         self._styles = base
         return f'<div style="{self.css()}">{Group(self.items).render()}</div>'
-
+    
 class Grid(Component):
-    def __init__(self, items, columns=3, gap="20px"):
+    def __init__(self, items, columns=3, gap="20px", min_width="250px"):
         super().__init__()
-        self.items, self.cols, self.gap = items, columns, gap
+        self.items, self.cols, self.gap, self.min_w = items, columns, gap, min_width
+
     def render(self):
-        base = {"display": "grid", "grid-template-columns": f"repeat({self.cols}, 1fr)", "gap": self.gap}
+        # Instead of fixed columns, we use repeat(auto-fit) for responsiveness
+        base = {
+            "display": "grid", 
+            "grid-template-columns": f"repeat(auto-fit, minmax({self.min_w}, 1fr))", 
+            "gap": self.gap
+        }
         base.update(self._styles)
         self._styles = base
         return f'<div style="{self.css()}">{Group(self.items).render()}</div>'
@@ -222,19 +361,34 @@ class Grid(Component):
 
 class Navbar(Component):
     def __init__(self, brand_name, links):
-        """links: list of tuples [("Home", "/"), ("Settings", "/settings")]"""
         super().__init__()
         self.brand, self.links = brand_name, links
+        
     def render(self):
-        base = {"padding": "15px 40px", "background": "#000", "border-bottom": "1px solid #333", 
-                "display": "flex", "justify-content": "space-between", "align-items": "center", "position":"sticky", "top":"0"}
+        base = {
+            "padding": "15px 40px", "background": "#000", "border-bottom": "1px solid #333", 
+            "display": "flex", "justify-content": "space-between", "align-items": "center", 
+            "position":"sticky", "top":"0", "z-index": "1000"
+        }
         base.update(self._styles)
         self._styles = base
-        btns = "".join([f'<a href="{u}" style="color:#888; margin-left:20px; text-decoration:none; font-size:14px; font-weight:500;">{n}</a>' for n, u in self.links])
+        
+        btns = "".join([
+            f'<a href="{u}" style="color:#888; margin-left:20px; text-decoration:none; font-size:14px; font-weight:500;">{n}</a>' 
+            for n, u in self.links
+        ])
+        
         return f'''
         <nav style="{self.css()}">
             <div style="font-weight:bold; font-size:20px; color:#6366f1;">{self.brand}</div>
-            <div>{btns}</div>
+            
+            <button class="menu-toggle" onclick="toggleMenu()">
+                <i data-lucide="menu"></i>
+            </button>
+            
+            <div id="mobile-nav" class="nav-links">
+                {btns}
+            </div>
         </nav>'''
 
 class Image(Component):
@@ -266,7 +420,12 @@ class Spacer(Component):
     def render(self):
         return f'<div style="height:{self.h}; width:{self.w};"></div>'
 
-
+class Icon(Component):
+    def __init__(self, name, size=20, color="currentColor"):
+        super().__init__()
+        self.name, self.size, self.color = name, size, color
+    def render(self):
+        return f'<i data-lucide="{self.name}" style="width:{self.size}px; height:{self.size}px; color:{self.color}; {self.css()}"></i>'
 
 
 
