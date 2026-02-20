@@ -41,12 +41,25 @@ class ShadowEngine(BaseHTTPRequestHandler):
         self.handle_request()
 
     def do_POST(self):
+        # 1. Identify Subdomain for POST requests too
+        host = self.headers.get('Host', '')
+        subdomain = host.split('.')[0] if '.' in host else 'www'
+        if 'localhost' in subdomain or '127.0.0.1' in subdomain:
+            subdomain = 'www'
+
         length = int(self.headers.get('Content-Length', 0))
         params = {k: v[0] for k, v in parse_qs(self.rfile.read(length).decode()).items()}
+        
         func, args = self.find_route(urlparse(self.path).path)
-        if func: func(self.server.app_instance, params, *args, is_post=True)
-        self.send_response(303); self.send_header('Location', self.headers.get('Referer', '/')); self.end_headers()
-
+        
+        # 2. Pass subdomain here as well
+        if func: 
+            func(self.server.app_instance, params, subdomain, *args, is_post=True)
+            
+        self.send_response(303)
+        self.send_header('Location', self.headers.get('Referer', '/'))
+        self.end_headers()
+        
     def handle_request(self):
         # Get the Host (e.g., 'blog.lmcworld.com:8080' or 'localhost:8080')
         host = self.headers.get('Host', '')
