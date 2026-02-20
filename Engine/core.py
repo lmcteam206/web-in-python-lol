@@ -48,13 +48,25 @@ class ShadowEngine(BaseHTTPRequestHandler):
         self.send_response(303); self.send_header('Location', self.headers.get('Referer', '/')); self.end_headers()
 
     def handle_request(self):
+        # Get the Host (e.g., 'blog.lmcworld.com:8080' or 'localhost:8080')
+        host = self.headers.get('Host', '')
+        subdomain = host.split('.')[0] if '.' in host else 'www'
+        
+        # Optional: If you are running locally (localhost), the split might catch 'localhost'
+        if 'localhost' in subdomain or '127.0.0.1' in subdomain:
+            subdomain = 'www'
+
         func, args = self.find_route(urlparse(self.path).path)
         params = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+        
         self.send_response(200); self.send_header("Content-type", "text/html"); self.end_headers()
+        
         try:
-            content = func(self.server.app_instance, params, *args) if func else "<h1>404</h1>"
-        except:
+            # Pass the detected subdomain into your page function
+            content = func(self.server.app_instance, params, subdomain, *args) if func else "<h1>404</h1>"
+        except Exception:
             content = f"<pre style='color:red;'>{traceback.format_exc()}</pre>"
+            
         self.wfile.write(self.server.app_instance._wrap(content).encode())
 
     def find_route(self, path):

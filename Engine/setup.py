@@ -8,3 +8,6 @@ setup(
     packages=find_packages(),
     install_requires=[], # Since you used only standard libs, keep this empty!
 )
+
+# python -m build
+#python -m twine upload dist/*
